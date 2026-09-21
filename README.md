@@ -66,6 +66,15 @@ Verwaltet unter `/admin`, gespeichert in SQLite unter `DATA_DIR`.
 | `ADMIN_PASSWORT` | `Password!2026` | |
 | `SESSION_SECRET` | zufällig | bei `NODE_ENV=production` Pflicht, mindestens 16 Zeichen |
 
+## Schnellstart unter Windows
+
+`start.bat` doppelklicken. Das Skript installiert beim ersten Mal die Abhängigkeiten, baut
+Oberfläche und Server, startet auf Port 3000 und öffnet die Verwaltung im Browser. Die Datenbank
+landet in `daten\` neben dem Skript. Gebaut wird bei jedem Start, damit nie ein alter Stand läuft.
+
+Zum Beenden Strg+C drücken oder das Fenster schließen. Abweichende Werte lassen sich vorher als
+Umgebungsvariablen setzen, etwa `set PORT=3010`.
+
 ## Entwickeln
 
 ```bash
