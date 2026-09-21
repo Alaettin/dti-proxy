@@ -19,12 +19,19 @@ Zielsystems werden bewusst nicht durchgereicht.
 
 ## Discovery
 
-Aus einer globalAssetId der Form `<schema><domain>/<itemID>` wird die itemID gezogen, davor
-kommt die eingestellte Basis, dahinter `/aas` mit der itemID als Parameter.
+Aus einer globalAssetId wird die itemID gezogen, davor kommt die eingestellte Basis, dahinter
+`/aas` mit der itemID als Parameter.
+
+Zwei Eingabeformen kommen vor. Bei `<schema><domain>/<itemID>` ist die itemID das letzte
+Pfadsegment. Liegt der Bezeichner bereits in der Zielform vor, steht die itemID im Query-Teil
+und hat Vorrang, sonst käme als itemID das Pfadsegment `aas` heraus.
 
 ```
-https://viewer-pf.test.dti.neoception.dev/70133076
-  -> https://viewer-pf.test.dti.neoception.dev/aas?itemId=70133076
+https://viewer-rc.test.dti.neoception.dev/70133076
+  -> https://viewer-rc.test.dti.neoception.dev/aas?itemId=70133076
+
+https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291
+  -> https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291
 ```
 
 Der Aufruf rechnet nur, er fragt das Zielsystem nicht. Bedient wird ausschließlich der Name
@@ -33,7 +40,7 @@ Der Aufruf rechnet nur, er fragt das Zielsystem nicht. Bedient wird ausschließl
 ```bash
 curl -X POST 'http://localhost:3000/lookup/shellsByAssetLink?limit=10' \
   -H 'content-type: application/json' \
-  -d '[{"name":"globalAssetId","value":"https://viewer-pf.test.dti.neoception.dev/70133076"}]'
+  -d '[{"name":"globalAssetId","value":"https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291"}]'
 ```
 
 ## Durchreichen heißt wirklich durchreichen
@@ -51,7 +58,7 @@ Verwaltet unter `/admin`, gespeichert in SQLite unter `DATA_DIR`.
 | Schlüssel | Vorgabe | Bedeutung |
 |---|---|---|
 | `upstreamBasis` | `https://rc.test.dti.neoception.dev` | Ziel der zehn AAS-Aufrufe |
-| `aasBasis` | `https://viewer-pf.test.dti.neoception.dev` | Schema und Domain der gebauten AAS-IDs |
+| `aasBasis` | `https://viewer-rc.test.dti.neoception.dev` | Schema und Domain der gebauten AAS-IDs |
 | `proxyBasis` | leer | öffentliche Basis, leer heißt aus der Anfrage ableiten |
 | `zeitlimitMs` | `30000` | Zeitlimit der Weiterleitung, 1000 bis 300000 |
 

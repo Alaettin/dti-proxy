@@ -55,7 +55,7 @@ function discoveryPfad(): Record<string, unknown> {
         content: {
           "application/json": {
             schema: { type: "array", minItems: 1, items: { $ref: "#/components/schemas/AssetLink" } },
-            example: [{ name: "globalAssetId", value: "https://example.com/assets/ABC123" }],
+            example: [{ name: "globalAssetId", value: "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291" }],
           },
         },
       },
@@ -65,7 +65,10 @@ function discoveryPfad(): Record<string, unknown> {
           content: {
             "application/json": {
               schema: { $ref: "#/components/schemas/PagedResultAasIds" },
-              example: { paging_metadata: {}, result: ["https://example.com/aas?itemId=ABC123"] },
+              example: {
+                paging_metadata: {},
+                result: ["https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291"],
+              },
             },
           },
         },
@@ -84,7 +87,7 @@ const DISCOVERY_SCHEMAS: Record<string, unknown> = {
     required: ["name", "value"],
     properties: {
       name: { type: "string", minLength: 1, maxLength: 64, example: "globalAssetId" },
-      value: { type: "string", minLength: 1, maxLength: 2048, example: "https://example.com/assets/ABC123" },
+      value: { type: "string", minLength: 1, maxLength: 2048, example: "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291" },
     },
   },
   PagingMetadata: {

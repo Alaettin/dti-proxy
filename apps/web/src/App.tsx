@@ -529,8 +529,7 @@ export function ApiReiter(): React.ReactElement {
         <p className="hinweis">
           Die Anfragen gehen an diesen Proxy, nicht an ihm vorbei. Kennungen werden im Klartext eingegeben und auf
           Wunsch base64url kodiert, so wie die AAS-API sie erwartet. Der übliche Weg: unten Discovery aufrufen, das
-          Ergebnis kopieren und oben als aasIdentifier einsetzen. Der Asset-Bezeichner und die Kennung der
-          Verwaltungsschale sind nicht dasselbe.
+          Ergebnis kopieren und oben als aasIdentifier einsetzen.
         </p>
         <label>
           <span>

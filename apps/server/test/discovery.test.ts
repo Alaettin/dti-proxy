@@ -26,8 +26,28 @@ async function lookup(pfadZusatz: string, koerper: unknown): Promise<Antwort> {
 
 describe("itemIdAus", () => {
   it("nimmt das letzte Pfadsegment", () => {
-    expect(itemIdAus("https://viewer-pf.test.dti.neoception.dev/70133076")).toBe("70133076");
+    expect(itemIdAus("https://viewer-rc.test.dti.neoception.dev/70133076")).toBe("70133076");
     expect(itemIdAus("https://example.com/assets/ABC123")).toBe("ABC123");
+  });
+
+  // Liegt der Bezeichner schon in der Zielform vor, waere das letzte
+  // Pfadsegment "aas" und das Ergebnis Unsinn. Der Query-Teil hat Vorrang.
+  it("nimmt itemId aus dem Query-Teil, wenn er da ist", () => {
+    expect(itemIdAus("https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291")).toBe(
+      "VNDP77EV202504291",
+    );
+  });
+
+  it("nimmt itemId auch bei abweichender Gross- und Kleinschreibung", () => {
+    expect(itemIdAus("https://viewer-rc.test.dti.neoception.dev/aas?ITEMID=ABC")).toBe("ABC");
+  });
+
+  it("nimmt itemId auch neben anderen Parametern", () => {
+    expect(itemIdAus("https://viewer-rc.test.dti.neoception.dev/aas?x=1&itemId=ABC&y=2")).toBe("ABC");
+  });
+
+  it("faellt auf das Pfadsegment zurueck, wenn itemId leer ist", () => {
+    expect(itemIdAus("https://viewer-rc.test.dti.neoception.dev/70133076?itemId=")).toBe("70133076");
   });
 
   it("ignoriert einen abschliessenden Schraegstrich", () => {
@@ -46,8 +66,8 @@ describe("itemIdAus", () => {
 
 describe("aasIdBauen", () => {
   it("baut die Form aus der Anforderung", () => {
-    expect(aasIdBauen("https://viewer-pf.test.dti.neoception.dev", "70133076")).toBe(
-      "https://viewer-pf.test.dti.neoception.dev/aas?itemId=70133076",
+    expect(aasIdBauen("https://viewer-rc.test.dti.neoception.dev", "70133076")).toBe(
+      "https://viewer-rc.test.dti.neoception.dev/aas?itemId=70133076",
     );
   });
 
@@ -60,16 +80,27 @@ describe("POST /lookup/shellsByAssetLink", () => {
   it("findet die Shell zur globalAssetId", async () => {
     stand = pruefstand();
     const antwort = await lookup("", [
-      { name: "globalAssetId", value: "https://viewer-pf.test.dti.neoception.dev/70133076" },
+      { name: "globalAssetId", value: "https://viewer-rc.test.dti.neoception.dev/70133076" },
     ]);
 
     expect(antwort.status).toBe(200);
     expect(antwort.koerper).toEqual({
       paging_metadata: {},
-      result: ["https://viewer-pf.test.dti.neoception.dev/aas?itemId=70133076"],
+      result: ["https://viewer-rc.test.dti.neoception.dev/aas?itemId=70133076"],
     });
     // Discovery rechnet nur, es geht kein Aufruf nach oben.
     expect(stand.aufrufe).toHaveLength(0);
+  });
+
+  // Der gemeldete Fehler: die Eingabe lag schon in der Zielform vor, und
+  // heraus kam "...?itemId=aas".
+  it("gibt eine Kennung in der Zielform unveraendert zurueck", async () => {
+    const kennung = "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291";
+    stand = pruefstand();
+    const antwort = await lookup("", [{ name: "globalAssetId", value: kennung }]);
+
+    expect(antwort.status).toBe(200);
+    expect(antwort.koerper.result).toEqual([kennung]);
   });
 
   it("nutzt die Basis aus den Einstellungen", async () => {
@@ -116,7 +147,7 @@ describe("POST /lookup/shellsByAssetLink", () => {
     expect(cursor).toBeTruthy();
 
     const zweite = await lookup(`?limit=2&cursor=${cursor}`, eingabe);
-    expect(zweite.koerper.result).toEqual(["https://viewer-pf.test.dti.neoception.dev/aas?itemId=3"]);
+    expect(zweite.koerper.result).toEqual(["https://viewer-rc.test.dti.neoception.dev/aas?itemId=3"]);
     expect(zweite.koerper.paging_metadata).toEqual({});
   });
 

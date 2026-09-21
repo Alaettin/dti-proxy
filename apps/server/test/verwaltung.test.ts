@@ -171,7 +171,7 @@ describe("Einstellungen", () => {
 
     expect(antwort.status).toBe(400);
     expect(stand.einstellungen.lesen("zeitlimitMs")).toBe("30000");
-    expect(stand.einstellungen.lesen("aasBasis")).toBe("https://viewer-pf.test.dti.neoception.dev");
+    expect(stand.einstellungen.lesen("aasBasis")).toBe("https://viewer-rc.test.dti.neoception.dev");
   });
 
   it("weisen ein Zeitlimit ausserhalb der Spanne ab", async () => {

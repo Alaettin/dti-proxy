@@ -38,13 +38,18 @@ describe("Katalog", () => {
 
 describe("base64url", () => {
   it("liefert den Wert, der gegen die echte Instanz geprueft wurde", () => {
-    expect(base64url("https://viewer-pf.test.dti.neoception.dev/aas?itemId=70133076")).toBe(
-      "aHR0cHM6Ly92aWV3ZXItcGYudGVzdC5kdGkubmVvY2VwdGlvbi5kZXYvYWFzP2l0ZW1JZD03MDEzMzA3Ng",
+    expect(base64url("https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291")).toBe(
+      "aHR0cHM6Ly92aWV3ZXItcmMudGVzdC5kdGkubmVvY2VwdGlvbi5kZXYvYWFzP2l0ZW1JZD1WTkRQNzdFVjIwMjUwNDI5MQ",
     );
   });
 
   it("verwendet das URL-Alphabet und kein Auffuellzeichen", () => {
-    for (const eingabe of ["https://a.test/1", "https://viewer-pf.test.dti.neoception.dev/70133076", "ab", "abc"]) {
+    for (const eingabe of [
+      "https://a.test/1",
+      "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291",
+      "ab",
+      "abc",
+    ]) {
       const kodiert = base64url(eingabe);
       expect(kodiert, eingabe).not.toMatch(/[+/=]/);
     }

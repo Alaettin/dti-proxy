@@ -63,18 +63,33 @@ export function fehlertexte(fehler: ErrorObject[]): string[] {
 }
 
 /**
- * Zieht die itemID aus einer globalAssetId der Form <schema><domain>/<itemID>.
+ * Zieht die itemID aus einer globalAssetId.
+ *
+ * Zwei Formen kommen vor. Die der Anforderung, <schema><domain>/<itemID>, wo
+ * die itemID das letzte Pfadsegment ist. Und die Zielform selbst,
+ * <schema><domain>/aas?itemId=<itemID>, wo die itemID im Query-Teil steht und
+ * das letzte Pfadsegment schlicht "aas" waere. Der Query-Teil hat Vorrang,
+ * denn er benennt die itemID ausdruecklich, waehrend das Pfadsegment nur
+ * geraten ist.
+ *
  * Kein Treffer bedeutet kein Ergebnis, nicht Fehler: die Spezifikation
  * verlangt bei nicht Gefundenem 200 mit leerem result.
  */
 export function itemIdAus(wert: string): string | null {
-  let pfad: string;
+  let url: URL;
   try {
-    pfad = new URL(wert).pathname;
+    url = new URL(wert);
   } catch {
     return null;
   }
-  const segmente = pfad.split("/").filter((teil) => teil.length > 0);
+
+  for (const [name, inhalt] of url.searchParams) {
+    if (name.toLowerCase() !== "itemid") continue;
+    const sauber = inhalt.trim();
+    if (sauber !== "") return sauber;
+  }
+
+  const segmente = url.pathname.split("/").filter((teil) => teil.length > 0);
   const letztes = segmente[segmente.length - 1];
   if (letztes === undefined) return null;
   try {

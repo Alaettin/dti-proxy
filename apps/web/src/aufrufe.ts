@@ -36,15 +36,14 @@ export interface Aufruf {
   binaer?: boolean;
 }
 
-/** Der Bezeichner des Assets, also die Eingabe von Discovery. */
-const BEISPIEL_GLOBAL_ASSET_ID = "https://viewer-pf.test.dti.neoception.dev/70133076";
-
 /**
- * Die Kennung einer Verwaltungsschale, also die Ausgabe von Discovery. Beides
- * zu verwechseln ist naheliegend und führt zu lauter 400ern: die AAS-Aufrufe
- * wollen diese Form, nicht die des Asset-Bezeichners.
+ * Der Bezeichner des Assets, also die Eingabe von Discovery. Er darf bereits
+ * die Zielform tragen, dann steht die itemID im Query-Teil.
  */
-const BEISPIEL_AAS_ID = "https://viewer-pf.test.dti.neoception.dev/aas?itemId=70133076";
+const BEISPIEL_GLOBAL_ASSET_ID = "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291";
+
+/** Die Kennung einer Verwaltungsschale, also die Ausgabe von Discovery. */
+const BEISPIEL_AAS_ID = "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291";
 
 function kennung(name: string, titel: string): Parameter {
   return {

@@ -6,7 +6,7 @@ export const VORGABEN = {
   /** Oeffentliche Basis dieses Proxys. Leer bedeutet: aus der Anfrage ableiten. */
   proxyBasis: "",
   /** Schema und Domain fuer die gebauten AAS-IDs, der Punkt "Sonstiges". */
-  aasBasis: "https://viewer-pf.test.dti.neoception.dev",
+  aasBasis: "https://viewer-rc.test.dti.neoception.dev",
   /** Zeitlimit der Weiterleitung in Millisekunden. */
   zeitlimitMs: "30000",
 } as const;
