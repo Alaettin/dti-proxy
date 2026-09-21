@@ -14,6 +14,17 @@ export const VORGABEN = {
 export type Schluessel = keyof typeof VORGABEN;
 export type Werte = Record<Schluessel, string>;
 
+/**
+ * Was im Formular ueber dem Feld steht. Eine Meldung, die den technischen
+ * Schluessel nennt, laesst den Lesenden raten, welches Feld gemeint ist.
+ */
+export const BEZEICHNUNG: Record<Schluessel, string> = {
+  upstreamBasis: "Das Zielsystem",
+  proxyBasis: "Die öffentliche Basis dieses Proxys",
+  aasBasis: "Die Basis der erzeugten AAS-IDs",
+  zeitlimitMs: "Das Zeitlimit",
+};
+
 export interface Pruefverstoss {
   feld: Schluessel;
   text: string;
@@ -27,19 +38,20 @@ const SCHLUESSEL = Object.keys(VORGABEN) as Schluessel[];
  * 127.0.0.1 ist beim lokalen Testen der Normalfall.
  */
 export function basisPruefen(feld: Schluessel, roh: string): { wert: string } | { text: string } {
+  const name = BEZEICHNUNG[feld];
   const wert = roh.trim();
-  if (wert === "") return { text: `${feld} darf nicht leer sein.` };
+  if (wert === "") return { text: `${name} darf nicht leer sein.` };
   let url: URL;
   try {
     url = new URL(wert);
   } catch {
-    return { text: `${feld} ist keine gueltige URL.` };
+    return { text: `${name} ist keine gültige URL.` };
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    return { text: `${feld} muss mit http:// oder https:// beginnen.` };
+    return { text: `${name} muss mit http:// oder https:// beginnen.` };
   }
   if (url.search !== "" || url.hash !== "") {
-    return { text: `${feld} darf keinen Query-Teil und keinen Anker enthalten.` };
+    return { text: `${name} darf keinen Query-Teil und keinen Anker enthalten.` };
   }
   // Ein abschliessender Schraegstrich wuerde beim Zusammensetzen mit dem rohen
   // Pfad ein doppeltes // ergeben, und das waere bereits eine Veraenderung.
@@ -50,7 +62,7 @@ export function basisPruefen(feld: Schluessel, roh: string): { wert: string } | 
 function zeitlimitPruefen(roh: string): { wert: string } | { text: string } {
   const zahl = Number(roh);
   if (!Number.isInteger(zahl) || zahl < 1000 || zahl > 300_000) {
-    return { text: "zeitlimitMs muss eine ganze Zahl zwischen 1000 und 300000 sein." };
+    return { text: `${BEZEICHNUNG.zeitlimitMs} muss eine ganze Zahl zwischen 1000 und 300000 sein.` };
   }
   return { wert: String(zahl) };
 }
@@ -93,7 +105,7 @@ export class Einstellungen {
 
     for (const [feld, roh] of Object.entries(eingabe) as [Schluessel, string][]) {
       if (!SCHLUESSEL.includes(feld)) {
-        verstoesse.push({ feld, text: `${feld} ist keine bekannte Einstellung.` });
+        verstoesse.push({ feld, text: `„${feld}" ist keine bekannte Einstellung.` });
         continue;
       }
       if (feld === "zeitlimitMs") {

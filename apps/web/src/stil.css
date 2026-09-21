@@ -105,6 +105,46 @@ label span {
   margin-bottom: 6px;
 }
 
+label span em {
+  font-style: normal;
+  opacity: 0.75;
+}
+
+label span em::before {
+  content: " · ";
+}
+
+label.schalter {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+label.schalter input {
+  width: auto;
+  margin-top: 3px;
+  accent-color: var(--akzent);
+}
+
+label.schalter span {
+  margin-bottom: 0;
+}
+
+select {
+  width: 100%;
+  background: var(--grund);
+  border: 1px solid var(--rand);
+  border-radius: 6px;
+  color: var(--schrift);
+  padding: 9px 11px;
+  font: inherit;
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--akzent);
+}
+
 input,
 textarea {
   width: 100%;
@@ -205,4 +245,151 @@ pre {
 .anmeldung {
   max-width: 380px;
   margin: 12vh auto 0;
+}
+
+.abstand {
+  margin-top: 14px;
+}
+
+/* Aufklappliste der Aufrufe */
+
+.aufrufliste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.aufruf {
+  border: 1px solid var(--rand);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.aufruf.offen {
+  border-color: var(--akzent);
+}
+
+.aufrufzeile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: var(--grund);
+  border: none;
+  color: var(--schrift);
+  font: inherit;
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.aufrufzeile:hover {
+  background: #11161d;
+}
+
+.aufrufzeile code {
+  flex: 1;
+  font-size: 13px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.aufrufzeile .pfeil {
+  color: var(--gedaempft);
+  font-size: 11px;
+}
+
+.methode {
+  flex: none;
+  min-width: 48px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  border-radius: 4px;
+  padding: 3px 7px;
+  color: #fff;
+}
+
+.methode.get {
+  background: #1f6feb;
+}
+
+.methode.post {
+  background: #2ea043;
+}
+
+.aufrufinhalt {
+  padding: 16px 12px 14px;
+  border-top: 1px solid var(--rand);
+}
+
+.aufrufinhalt > .hinweis {
+  margin-top: 0;
+}
+
+/* Antwort */
+
+.antwort {
+  margin-top: 16px;
+  border-top: 1px solid var(--rand);
+  padding-top: 14px;
+}
+
+.antwortkopf {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--gedaempft);
+}
+
+.schild {
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.schild.gut {
+  background: var(--gut);
+}
+
+.schild.schlecht {
+  background: var(--schlecht);
+}
+
+.schild.neutral {
+  background: #6e7681;
+}
+
+button.verweis {
+  background: none;
+  border: none;
+  color: var(--akzent);
+  font: inherit;
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.vorschau {
+  display: block;
+  max-height: 260px;
+  border: 1px solid var(--rand);
+  border-radius: 6px;
+  background: #fff;
+  margin-bottom: 12px;
+}
+
+a.tat {
+  text-decoration: none;
+  display: inline-block;
+}
+
+.knopfreihe .hinweis {
+  margin: 0;
+  font-size: 12px;
 }

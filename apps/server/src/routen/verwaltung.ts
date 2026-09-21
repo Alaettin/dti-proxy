@@ -94,7 +94,7 @@ export function verwaltungRouter({
     }
     const verstoesse = einstellungen.schreiben(eingabe);
     if (verstoesse.length > 0) {
-      res.status(400).json({ fehler: "Die Eingabe ist nicht gueltig.", verstoesse });
+      res.status(400).json({ fehler: "Die Eingabe ist nicht gültig.", verstoesse });
       return;
     }
     res.json({ werte: einstellungen.alle(), proxyBasisEffektiv: proxyBasisAus(req, einstellungen) });

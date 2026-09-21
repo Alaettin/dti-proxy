@@ -29,9 +29,9 @@ function discoveryPfad(): Record<string, unknown> {
       tags: ["Discovery"],
       summary: "SearchAllAssetAdministrationShellIdsByAssetLink",
       description:
-        `Liefert die IDs der Asset Administration Shells zu einem Asset-Bezeichner. ` +
+        `Liefert die Kennungen der Asset Administration Shells zu einem Asset-Bezeichner. ` +
         `Discovery Service Specification V${DISCOVERY_FASSUNG}, Profil SSP-001 (${DISCOVERY_PROFIL}). ` +
-        `Bedient wird ausschliesslich der Name globalAssetId.`,
+        `Bedient wird ausschließlich der Name globalAssetId. Wird nichts gefunden, ist die Antwort 200 mit leerem result.`,
       operationId: "SearchAllAssetAdministrationShellIdsByAssetLink",
       security: [],
       parameters: [
@@ -39,7 +39,7 @@ function discoveryPfad(): Record<string, unknown> {
           name: "limit",
           in: "query",
           required: false,
-          description: "Hoechstzahl der Ergebnisse auf dieser Seite.",
+          description: "Höchstzahl der Ergebnisse auf dieser Seite.",
           schema: { type: "integer", minimum: 1 },
         },
         {
