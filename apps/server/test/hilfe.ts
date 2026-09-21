@@ -29,6 +29,7 @@ export interface Pruefstand {
 
 export function pruefstand(
   antwort: (aufruf: Aufruf) => Response | Promise<Response> = () => new Response("{}", { status: 200 }),
+  optionen: { webVerzeichnis?: string | null } = {},
 ): Pruefstand {
   const db = datenbankOeffnen(":memory:");
   const einstellungen = new Einstellungen(db);
@@ -70,8 +71,9 @@ export function pruefstand(
       benutzer: TEST_BENUTZER,
       passwort: TEST_PASSWORT,
       geheimnis: TEST_GEHEIMNIS,
-      sicher: false,
-      webVerzeichnis: null,
+      // sicher bewusst nicht gesetzt: geprueft werden soll die Ableitung aus
+      // der Verbindung, nicht ein im Pruefstand festgenagelter Wert.
+      webVerzeichnis: optionen.webVerzeichnis ?? null,
     }),
     einstellungen,
     aufrufe,

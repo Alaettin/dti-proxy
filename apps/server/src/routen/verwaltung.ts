@@ -15,7 +15,13 @@ export interface VerwaltungOptionen {
   benutzer: string;
   passwort: string;
   geheimnis: string;
-  sicher: boolean;
+  /**
+   * Erzwingt das Secure-Merkmal am Cookie. Ohne Angabe entscheidet die
+   * tatsaechliche Verbindung (req.secure, hinter einem Proxy aus
+   * X-Forwarded-Proto). Ein Secure-Cookie ueber reines HTTP wird vom Browser
+   * verworfen, dann kann sich niemand anmelden.
+   */
+  sicher?: boolean;
 }
 
 export function verwaltungRouter({
@@ -62,7 +68,7 @@ export function verwaltungRouter({
     }
 
     versuche.delete(herkunft);
-    sitzungSetzen(res, benutzer, geheimnis, sicher);
+    sitzungSetzen(res, benutzer, geheimnis, sicher ?? req.secure);
     res.json({ angemeldet: true, benutzer });
   });
 

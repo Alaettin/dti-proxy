@@ -18,6 +18,7 @@ export interface AppOptionen {
   benutzer?: string;
   passwort?: string;
   geheimnis?: string;
+  /** Ohne Angabe entscheidet die tatsaechliche Verbindung ueber das Secure-Merkmal. */
   sicher?: boolean;
   webVerzeichnis?: string | null;
 }
@@ -29,7 +30,7 @@ export function appAnlegen({
   benutzer = konfiguration.adminBenutzer,
   passwort = konfiguration.adminPasswort,
   geheimnis = konfiguration.sitzungsGeheimnis,
-  sicher = konfiguration.produktion,
+  sicher,
   webVerzeichnis = konfiguration.webVerzeichnis,
 }: AppOptionen): Express {
   const app = express();
@@ -63,8 +64,9 @@ export function appAnlegen({
   if (webVerzeichnis !== null && fs.existsSync(webVerzeichnis)) {
     app.use("/admin", express.static(webVerzeichnis, { index: "index.html" }));
     // Die Oberflaeche traegt ihre eigenen Wege, jeder unbekannte /admin-Weg
-    // gehoert an ihre index.html.
-    app.get(/^\/admin(?:\/.*)?$/, (_req, res) => {
+    // gehoert an ihre index.html. Ausgenommen /admin/api: ein unbekannter
+    // Weg dort ist ein Fehler und darf nicht als HTML-Seite zurueckkommen.
+    app.get(/^\/admin(?!\/api(?:\/|$))(?:\/.*)?$/, (_req, res) => {
       res.sendFile(path.join(webVerzeichnis, "index.html"));
     });
   }

@@ -90,6 +90,32 @@ describe("Anmeldung", () => {
     expect(antwort.status).toBe(401);
   });
 
+  // Beide Richtungen: ein Secure-Cookie ueber reines HTTP wird vom Browser
+  // verworfen, dann kann sich niemand anmelden. Und ohne Secure hinter HTTPS
+  // waere die Sitzung unnoetig ungeschuetzt.
+  it("setzt ueber reines HTTP kein Secure am Cookie", async () => {
+    stand = pruefstand();
+    const antwort = await roheAnfrage(stand.app, "/admin/api/anmelden", {
+      methode: "POST",
+      kopfzeilen: { "content-type": "application/json" },
+      koerper: JSON.stringify({ benutzer: TEST_BENUTZER, passwort: TEST_PASSWORT }),
+    });
+    const cookie = (antwort.kopfzeilen["set-cookie"] as string[])[0]!;
+    expect(cookie).not.toMatch(/;\s*Secure/i);
+    expect(cookie).toMatch(/HttpOnly/i);
+  });
+
+  it("setzt Secure, wenn die Verbindung laut X-Forwarded-Proto https ist", async () => {
+    stand = pruefstand();
+    const antwort = await roheAnfrage(stand.app, "/admin/api/anmelden", {
+      methode: "POST",
+      kopfzeilen: { "content-type": "application/json", "x-forwarded-proto": "https" },
+      koerper: JSON.stringify({ benutzer: TEST_BENUTZER, passwort: TEST_PASSWORT }),
+    });
+    const cookie = (antwort.kopfzeilen["set-cookie"] as string[])[0]!;
+    expect(cookie).toMatch(/;\s*Secure/i);
+  });
+
   it("meldet ab", async () => {
     stand = pruefstand();
     const cookie = await anmelden();
