@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { pruefstand, roheAnfrage, TEST_BENUTZER, TEST_PASSWORT, type Pruefstand } from "./hilfe.js";
+import { PRUEF_BASIS, PRUEF_KENNUNG, pruefstand, roheAnfrage, TEST_BENUTZER, TEST_PASSWORT, type Pruefstand } from "./hilfe.js";
 
 let stand: Pruefstand | undefined;
 
@@ -179,16 +179,16 @@ describe("Proxys über die Verwaltung", () => {
     expect((await json("/admin/api/proxys")).status).toBe(401);
   });
 
-  it("listet den Standard mit seiner Basis-URL", async () => {
+  it("listet jeden Proxy mit seiner Basis-URL", async () => {
     stand = pruefstand();
     const cookie = await anmelden();
     const antwort = await json("/admin/api/proxys", { cookie });
 
-    const liste = antwort.koerper.proxys as { kennung: string; standard: boolean; basisUrl: string }[];
+    const liste = antwort.koerper.proxys as { kennung: string; basisUrl: string; basisPfad: string }[];
     expect(liste).toHaveLength(1);
-    expect(liste[0]!.kennung).toBe("standard");
-    expect(liste[0]!.standard).toBe(true);
-    expect(liste[0]!.basisUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(liste[0]!.kennung).toBe(PRUEF_KENNUNG);
+    expect(liste[0]!.basisUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/p\/eins$/);
+    expect(liste[0]!.basisPfad).toBe(PRUEF_BASIS);
   });
 
   it("legt einen zweiten an und schlaegt die Kennung aus dem Namen vor", async () => {
@@ -201,9 +201,8 @@ describe("Proxys über die Verwaltung", () => {
     });
 
     expect(antwort.status).toBe(201);
-    const proxy = antwort.koerper.proxy as { kennung: string; standard: boolean; basisUrl: string };
+    const proxy = antwort.koerper.proxy as { kennung: string; basisUrl: string };
     expect(proxy.kennung).toBe("kunde-ae");
-    expect(proxy.standard).toBe(false);
     expect(proxy.basisUrl).toMatch(/\/p\/kunde-ae$/);
   });
 
@@ -242,22 +241,7 @@ describe("Proxys über die Verwaltung", () => {
     expect(stand.proxys.nachKennung("zwei")!.name).toBe("Zwei");
   });
 
-  it("setzt den Standard um", async () => {
-    stand = pruefstand();
-    const cookie = await anmelden();
-    await json("/admin/api/proxys", {
-      methode: "POST",
-      cookie,
-      koerper: { name: "Zwei", upstreamBasis: "https://zwei.test", aasBasis: "https://v.test" },
-    });
-    const antwort = await json("/admin/api/proxys/zwei/standard", { methode: "POST", cookie });
-
-    expect(antwort.status).toBe(200);
-    expect(stand.proxys.standard()!.kennung).toBe("zwei");
-    expect(stand.proxys.nachKennung("standard")!.standard).toBe(false);
-  });
-
-  it("loescht einen Proxy, aber nicht den letzten", async () => {
+  it("loescht jeden Proxy, auch den letzten", async () => {
     stand = pruefstand();
     const cookie = await anmelden();
     await json("/admin/api/proxys", {
@@ -269,9 +253,15 @@ describe("Proxys über die Verwaltung", () => {
     expect((await json("/admin/api/proxys/zwei", { methode: "DELETE", cookie })).status).toBe(200);
     expect(stand.proxys.anzahl()).toBe(1);
 
-    const letzter = await json("/admin/api/proxys/standard", { methode: "DELETE", cookie });
-    expect(letzter.status).toBe(400);
-    expect(stand.proxys.anzahl()).toBe(1);
+    expect((await json(`/admin/api/proxys/${PRUEF_KENNUNG}`, { methode: "DELETE", cookie })).status).toBe(200);
+    expect(stand.proxys.anzahl()).toBe(0);
+  });
+
+  it("es gibt keinen Weg mehr, einen Standard zu setzen", async () => {
+    stand = pruefstand();
+    const cookie = await anmelden();
+    const antwort = await json(`/admin/api/proxys/${PRUEF_KENNUNG}/standard`, { methode: "POST", cookie });
+    expect(antwort.status).toBe(404);
   });
 });
 
@@ -283,7 +273,7 @@ describe("Verbindungspruefung", () => {
         : new Response("{}", { status: 404 }),
     );
     const cookie = await anmelden();
-    const antwort = await json("/admin/api/proxys/standard/pruefung", { methode: "POST", cookie });
+    const antwort = await json(`/admin/api/proxys/${PRUEF_KENNUNG}/pruefung`, { methode: "POST", cookie });
 
     expect(antwort.koerper.erreichbar).toBe(true);
     expect(antwort.koerper.koerper).toBe('{"profiles":[10,12,16]}');
@@ -294,7 +284,7 @@ describe("Verbindungspruefung", () => {
       throw new Error("ECONNREFUSED");
     });
     const cookie = await anmelden();
-    const antwort = await json("/admin/api/proxys/standard/pruefung", { methode: "POST", cookie });
+    const antwort = await json(`/admin/api/proxys/${PRUEF_KENNUNG}/pruefung`, { methode: "POST", cookie });
 
     expect(antwort.status).toBe(200);
     expect(antwort.koerper.erreichbar).toBe(false);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { pruefstand, roheAnfrage, type Pruefstand } from "./hilfe.js";
+import { PRUEF_BASIS, PRUEF_KENNUNG, pruefstand, roheAnfrage, type Pruefstand } from "./hilfe.js";
 
 let stand: Pruefstand | undefined;
 
@@ -15,16 +15,35 @@ describe("Weiterleitung", () => {
     const pfad =
       "/submodels/aHR0cDovL2E-Yg_c/submodel-elements/Nameplate%2FManufacturerName?level=Deep&extent=WithBlobValue";
     stand = pruefstand();
-    const antwort = await roheAnfrage(stand.app, pfad);
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + pfad);
 
     expect(antwort.status).toBe(200);
     expect(stand.aufrufe).toHaveLength(1);
+    // Das Praefix faellt weg, der Rest kommt Zeichen fuer Zeichen an.
     expect(stand.aufrufe[0]!.url).toBe("https://oben.beispiel.test" + pfad);
+  });
+
+  // Gegenprobe zum Wegfall des Standards: an der Wurzel liegt kein Proxy mehr.
+  it("bedient die Wurzel nicht mehr und fragt dort niemanden", async () => {
+    stand = pruefstand();
+    for (const pfad of ["/description", "/shells/QUJD", "/submodels/QUJD/submodel-elements/A%2FB"]) {
+      const antwort = await roheAnfrage(stand.app, pfad);
+      expect(antwort.status, pfad).toBe(404);
+    }
+    expect(stand.aufrufe).toHaveLength(0);
+  });
+
+  it("kennt eine unbekannte Kennung nicht", async () => {
+    stand = pruefstand();
+    const antwort = await roheAnfrage(stand.app, "/p/gibtsnicht/description");
+
+    expect(antwort.status).toBe(404);
+    expect(stand.aufrufe).toHaveLength(0);
   });
 
   it("reicht Authorization durch und die Hop-by-Hop-Kopfzeilen nicht", async () => {
     stand = pruefstand();
-    await roheAnfrage(stand.app, "/description", {
+    await roheAnfrage(stand.app, PRUEF_BASIS + "/description", {
       kopfzeilen: {
         authorization: "Bearer abc.def.ghi",
         "accept-language": "de-DE",
@@ -49,7 +68,7 @@ describe("Weiterleitung", () => {
           headers: { "content-type": "application/json", "x-eigenes-feld": "erhalten" },
         }),
     );
-    const antwort = await roheAnfrage(stand.app, "/submodels/QUJD");
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/submodels/QUJD");
 
     expect(antwort.status).toBe(404);
     expect(antwort.kopfzeilen["x-eigenes-feld"]).toBe("erhalten");
@@ -59,7 +78,7 @@ describe("Weiterleitung", () => {
 
   it("reicht eine Weiterleitung von oben durch, statt ihr zu folgen", async () => {
     stand = pruefstand(() => new Response(null, { status: 302, headers: { location: "https://woanders.test/x" } }));
-    const antwort = await roheAnfrage(stand.app, "/description");
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/description");
 
     expect(antwort.status).toBe(302);
     expect(antwort.kopfzeilen.location).toBe("https://woanders.test/x");
@@ -69,7 +88,7 @@ describe("Weiterleitung", () => {
     stand = pruefstand(() => {
       throw new Error("getaddrinfo ENOTFOUND oben.beispiel.test");
     });
-    const antwort = await roheAnfrage(stand.app, "/description");
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/description");
 
     expect(antwort.status).toBe(502);
     const koerper = JSON.parse(antwort.koerper) as { messages: { code: string; timestamp: string; text: string }[] };
@@ -83,8 +102,8 @@ describe("Weiterleitung", () => {
       await new Promise((warten) => setTimeout(warten, 1500));
       return new Response("{}");
     });
-    stand.proxys.aendern("standard", { zeitlimitMs: "1000" });
-    const antwort = await roheAnfrage(stand.app, "/description");
+    stand.proxys.aendern(PRUEF_KENNUNG, { zeitlimitMs: "1000" });
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/description");
 
     expect(antwort.status).toBe(502);
     expect(antwort.koerper).toContain("did not answer within 1000 ms");
@@ -92,7 +111,7 @@ describe("Weiterleitung", () => {
 
   it("laesst nur GET und HEAD auf den weitergereichten Pfaden zu", async () => {
     stand = pruefstand();
-    const antwort = await roheAnfrage(stand.app, "/submodels/QUJD", { methode: "DELETE" });
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/submodels/QUJD", { methode: "DELETE" });
 
     expect(antwort.status).toBe(405);
     expect(antwort.kopfzeilen.allow).toBe("GET, HEAD");
@@ -101,7 +120,7 @@ describe("Weiterleitung", () => {
 
   it("reicht fremde Pfade nicht weiter, sondern antwortet selbst mit 404", async () => {
     stand = pruefstand();
-    const antwort = await roheAnfrage(stand.app, "/api/connector/model");
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/api/connector/model");
 
     expect(antwort.status).toBe(404);
     expect(stand.aufrufe).toHaveLength(0);

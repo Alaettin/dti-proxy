@@ -57,7 +57,7 @@ export function verwaltungRouter({
     return {
       ...proxy,
       basisUrl: basisUrl(dienstBasisAus(req, einstellungen), proxy),
-      basisPfad: proxy.standard ? "" : `/p/${proxy.kennung}`,
+      basisPfad: `/p/${proxy.kennung}`,
     };
   }
 
@@ -157,15 +157,6 @@ export function verwaltungRouter({
 
   router.delete("/proxys/:kennung", schutz, (req, res) => {
     const fehler = proxys.loeschen(wegKennung(req));
-    if (fehler !== null) {
-      res.status(400).json(fehler);
-      return;
-    }
-    res.json({ proxys: proxys.alle().map((proxy) => anzeigen(req, proxy)) });
-  });
-
-  router.post("/proxys/:kennung/standard", schutz, (req, res) => {
-    const fehler = proxys.standardSetzen(wegKennung(req));
     if (fehler !== null) {
       res.status(400).json(fehler);
       return;

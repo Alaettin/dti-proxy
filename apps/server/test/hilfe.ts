@@ -11,6 +11,10 @@ import { Proxys } from "../src/proxys.js";
 export const FESTE_ZEIT = "2026-09-18T09:12:44.000Z";
 export const festeUhr: Uhr = () => new Date(FESTE_ZEIT);
 
+/** Der Proxy, den jeder Pruefstand anlegt. Alle Wege laufen ueber /p/eins. */
+export const PRUEF_KENNUNG = "eins";
+export const PRUEF_BASIS = `/p/${PRUEF_KENNUNG}`;
+
 export const TEST_BENUTZER = "NeoAdmin";
 export const TEST_PASSWORT = "Password!2026";
 export const TEST_GEHEIMNIS = "geheimnis-nur-fuer-den-pruefstand";
@@ -37,8 +41,15 @@ export function pruefstand(
   const db = datenbankOeffnen(":memory:");
   const einstellungen = new Einstellungen(db);
   const proxys = new Proxys(db);
-  // Der Standardproxy der Ersteinrichtung zeigt im Pruefstand auf die Attrappe.
-  proxys.aendern("standard", { upstreamBasis: "https://oben.beispiel.test" });
+  // Eine frische Datenbank ist leer, der Pruefstand legt seinen Proxy selbst an.
+  const angelegt = proxys.anlegen({
+    kennung: PRUEF_KENNUNG,
+    name: "Eins",
+    upstreamBasis: "https://oben.beispiel.test",
+    aasBasis: "https://viewer-rc.test.dti.neoception.dev",
+    zeitlimitMs: 30_000,
+  });
+  if ("verstoesse" in angelegt) throw new Error(JSON.stringify(angelegt.verstoesse));
   const aufrufe: Aufruf[] = [];
 
   const holen: typeof fetch = async (eingabe, init) => {

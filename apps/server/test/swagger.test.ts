@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { zusammenfuehren, type OpenApiDokument } from "../src/openapi.js";
-import { pruefstand, roheAnfrage, type Pruefstand } from "./hilfe.js";
+import { PRUEF_BASIS, pruefstand, roheAnfrage, type Pruefstand } from "./hilfe.js";
 
 const hier = path.dirname(fileURLToPath(import.meta.url));
 const vorlage = JSON.parse(
@@ -54,20 +54,20 @@ describe("GET /swagger/aas/swagger.json", () => {
       }
       return new Response("{}", { status: 404 });
     });
-    const antwort = await roheAnfrage(stand.app, "/swagger/aas/swagger.json");
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/swagger/aas/swagger.json");
 
     expect(antwort.status).toBe(200);
     expect(antwort.kopfzeilen["x-spec-quelle"]).toBe("oben");
     const dokument = JSON.parse(antwort.koerper) as OpenApiDokument;
     expect(Object.keys(dokument.paths)).toHaveLength(11);
-    expect(dokument.servers[0]!.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(dokument.servers[0]!.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/p\/eins$/);
   });
 
   it("faellt auf die mitgelieferte Kopie zurueck, wenn oben nichts antwortet", async () => {
     stand = pruefstand(() => {
       throw new Error("ECONNREFUSED");
     });
-    const antwort = await roheAnfrage(stand.app, "/swagger/aas/swagger.json");
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/swagger/aas/swagger.json");
 
     expect(antwort.status).toBe(200);
     expect(antwort.kopfzeilen["x-spec-quelle"]).toBe("kopie");
@@ -80,7 +80,7 @@ describe("GET /swagger/aas/swagger.json", () => {
         ? new Response("<!doctype html><html></html>", { headers: { "content-type": "text/html" } })
         : new Response("{}"),
     );
-    const antwort = await roheAnfrage(stand.app, "/swagger/aas/swagger.json");
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/swagger/aas/swagger.json");
 
     expect(antwort.kopfzeilen["x-spec-quelle"]).toBe("kopie");
   });
@@ -88,11 +88,10 @@ describe("GET /swagger/aas/swagger.json", () => {
   it("nutzt die eingestellte Proxy-Basis, wenn eine gesetzt ist", async () => {
     stand = pruefstand(() => new Response(JSON.stringify(vorlage)));
     stand.einstellungen.schreiben({ proxyBasis: "https://dti-proxy.beispiel.test/" });
-    // Der Standard liegt an der Wurzel, also ohne Praefix.
-    const antwort = await roheAnfrage(stand.app, "/swagger/aas/swagger.json");
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/swagger/aas/swagger.json");
 
     expect((JSON.parse(antwort.koerper) as OpenApiDokument).servers).toEqual([
-      { url: "https://dti-proxy.beispiel.test" },
+      { url: "https://dti-proxy.beispiel.test" + PRUEF_BASIS },
     ]);
   });
 });
@@ -100,10 +99,10 @@ describe("GET /swagger/aas/swagger.json", () => {
 describe("Swagger-Oberflaeche", () => {
   it("liefert die Seite und verweist auf die eigene Spec", async () => {
     stand = pruefstand();
-    const antwort = await roheAnfrage(stand.app, "/swagger/index.html");
+    const antwort = await roheAnfrage(stand.app, PRUEF_BASIS + "/swagger/index.html");
 
     expect(antwort.status).toBe(200);
-    expect(antwort.koerper).toContain('url: "/swagger/aas/swagger.json"');
+    expect(antwort.koerper).toContain(`url: "${PRUEF_BASIS}/swagger/aas/swagger.json"`);
   });
 
   it("liefert die Dateien von swagger-ui-dist einmal fuer alle Proxys aus", async () => {

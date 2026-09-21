@@ -9,14 +9,20 @@ für alle.
 
 ## Mehrere Proxys
 
-Jeder Proxy hat eine Kennung und liegt unter `/p/<kennung>`. Genau einer ist als **Standard**
-markiert und zusätzlich direkt an der Wurzel erreichbar.
+Man legt einen Proxy mit Namen an, daraus wird eine Kennung, und unter dieser Kennung ist er
+erreichbar. Alle Proxys sind gleichberechtigt, keiner liegt an der Wurzel.
 
 ```
-https://proxy.example/shells/<id>              Standard
-https://proxy.example/p/kunde-a/shells/<id>    ein zweiter Proxy
+https://proxy.example/p/rc/shells/<id>         ein Proxy
+https://proxy.example/p/kunde-a/shells/<id>    ein zweiter
 https://proxy.example/p/kunde-a/swagger        dessen eigene Swagger-Seite
 ```
+
+Die Kennung wird beim Anlegen aus dem Namen abgeleitet und ist bis zum Speichern änderbar.
+Danach bleibt sie stehen: ein späteres Umbenennen ändert die Adresse nicht, sonst bräche sie
+allen Aufrufern weg.
+
+Eine frische Installation hat noch keinen Proxy. Den ersten legt man unter `/admin` an.
 
 ## Was ein Proxy anbietet
 
@@ -57,7 +63,7 @@ Der Aufruf rechnet nur, er fragt das Zielsystem nicht. Bedient wird ausschließl
 `globalAssetId`; jeder andere Name liefert `200` mit leerem `result`, keinen Fehler.
 
 ```bash
-curl -X POST 'http://localhost:3000/lookup/shellsByAssetLink?limit=10' \
+curl -X POST 'http://localhost:3000/p/rc/lookup/shellsByAssetLink?limit=10' \
   -H 'content-type: application/json' \
   -d '[{"name":"globalAssetId","value":"https://viewer-rc.test.dti.neoception.dev/VNDP77EV202504291"}]'
 ```
@@ -77,13 +83,13 @@ Verwaltet unter `/admin`, gespeichert in SQLite unter `DATA_DIR`.
 
 Je Proxy:
 
-| Feld | Vorgabe beim ersten Proxy | Bedeutung |
-|---|---|---|
-| `name` | `Standard` | nur zur Anzeige |
-| `kennung` | `standard` | steht in der Adresse unter `/p/`, Kleinbuchstaben, Ziffern, Bindestriche |
-| `upstreamBasis` | `https://rc.test.dti.neoception.dev` | Ziel der zehn AAS-Aufrufe |
-| `aasBasis` | `https://viewer-rc.test.dti.neoception.dev` | Schema und Domain der gebauten AAS-IDs |
-| `zeitlimitMs` | `30000` | Zeitlimit der Weiterleitung, 1000 bis 300000 |
+| Feld | Bedeutung |
+|---|---|
+| `name` | nur zur Anzeige |
+| `kennung` | steht in der Adresse unter `/p/`, Kleinbuchstaben, Ziffern, Bindestriche, höchstens 40 Zeichen |
+| `upstreamBasis` | Ziel der zehn AAS-Aufrufe |
+| `aasBasis` | Schema und Domain der gebauten AAS-IDs |
+| `zeitlimitMs` | Zeitlimit der Weiterleitung, 1000 bis 300000 |
 
 Für den ganzen Dienst:
 
@@ -91,8 +97,10 @@ Für den ganzen Dienst:
 |---|---|---|
 | `proxyBasis` | leer | öffentliche Basis, leer heißt aus der Anfrage ableiten |
 
-Eine bestehende Installation mit nur einer Einstellungsreihe wandert beim Start von selbst in
-einen Proxy „Standard" mit genau diesen Werten.
+Zwei Wanderungen laufen beim Start von selbst und wiederholt folgenlos: eine Installation mit
+nur einer Einstellungsreihe wird zu einem Proxy „Standard" mit genau diesen Werten, und eine
+aus der Fassung mit einem ausgezeichneten Standardproxy verliert diese Sonderrolle, behält aber
+alle Proxys.
 
 ## Umgebung
 
@@ -108,8 +116,9 @@ einen Proxy „Standard" mit genau diesen Werten.
 ## Schnellstart unter Windows
 
 `start.bat` doppelklicken. Das Skript installiert beim ersten Mal die Abhängigkeiten, baut
-Oberfläche und Server, startet auf Port 3000 und öffnet die Verwaltung im Browser. Die Datenbank
-landet in `daten\` neben dem Skript. Gebaut wird bei jedem Start, damit nie ein alter Stand läuft.
+Oberfläche und Server, startet auf Port 3000 und öffnet die Verwaltung im Browser. Dort legt man
+den ersten Proxy an. Die Datenbank landet in `daten\` neben dem Skript. Gebaut wird bei jedem
+Start, damit nie ein alter Stand läuft.
 
 Zum Beenden Strg+C drücken oder das Fenster schließen. Abweichende Werte lassen sich vorher als
 Umgebungsvariablen setzen, etwa `set PORT=3010`.

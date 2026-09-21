@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { OpenApiDokument } from "../src/openapi.js";
-import { pruefstand, roheAnfrage, type Pruefstand } from "./hilfe.js";
+import { PRUEF_BASIS, pruefstand, roheAnfrage, type Pruefstand } from "./hilfe.js";
 
 const hier = path.dirname(fileURLToPath(import.meta.url));
 const vorlage = JSON.parse(readFileSync(path.join(hier, "../spec/aas.swagger.json"), "utf8")) as OpenApiDokument;
@@ -15,16 +15,17 @@ afterEach(() => {
   stand = undefined;
 });
 
-/** Ein Pruefstand mit zwei Proxys auf verschiedene Ziele. */
+/** Ein Pruefstand mit einem zweiten Proxy auf ein anderes Ziel. */
 function mitZweitem(antwort?: Parameters<typeof pruefstand>[0]): Pruefstand {
   const gebaut = pruefstand(antwort);
-  gebaut.proxys.anlegen({
+  const angelegt = gebaut.proxys.anlegen({
     kennung: "zwei",
     name: "Zwei",
     upstreamBasis: "https://zwei.beispiel.test",
     aasBasis: "https://viewer-zwei.test",
     zeitlimitMs: 30_000,
   });
+  if ("verstoesse" in angelegt) throw new Error(JSON.stringify(angelegt.verstoesse));
   return gebaut;
 }
 
@@ -41,7 +42,7 @@ describe("Weiterleitung mit mehreren Proxys", () => {
 
   it("schickt jeden Aufruf zu seinem eigenen Ziel", async () => {
     stand = mitZweitem();
-    await roheAnfrage(stand.app, "/description");
+    await roheAnfrage(stand.app, PRUEF_BASIS + "/description");
     await roheAnfrage(stand.app, "/p/zwei/description");
 
     expect(stand.aufrufe.map((a) => a.url)).toEqual([
@@ -50,17 +51,14 @@ describe("Weiterleitung mit mehreren Proxys", () => {
     ]);
   });
 
-  it("bedient den Standard weiterhin an der Wurzel", async () => {
+  // Kein Proxy hat einen Sonderplatz: die Wurzel bedient auch dann niemand,
+  // wenn es nur einen einzigen gibt.
+  it("bedient die Wurzel auch mit mehreren Proxys nicht", async () => {
     stand = mitZweitem();
-    await roheAnfrage(stand.app, "/p/standard/description");
-    expect(stand.aufrufe[0]!.url).toBe("https://oben.beispiel.test/description");
-  });
+    const antwort = await roheAnfrage(stand.app, "/description");
 
-  it("folgt dem umgesetzten Standard", async () => {
-    stand = mitZweitem();
-    stand.proxys.standardSetzen("zwei");
-    await roheAnfrage(stand.app, "/description");
-    expect(stand.aufrufe[0]!.url).toBe("https://zwei.beispiel.test/description");
+    expect(antwort.status).toBe(404);
+    expect(stand.aufrufe).toHaveLength(0);
   });
 
   it("antwortet bei unbekannter Kennung mit 404 und fragt niemanden", async () => {
@@ -97,7 +95,7 @@ describe("Discovery mit mehreren Proxys", () => {
 
   it("benutzt die aasBasis des angesprochenen Proxys", async () => {
     stand = mitZweitem();
-    expect((await lookup("/lookup/shellsByAssetLink")).result).toEqual([
+    expect((await lookup(PRUEF_BASIS + "/lookup/shellsByAssetLink")).result).toEqual([
       "https://viewer-rc.test.dti.neoception.dev/aas?itemId=4711",
     ]);
     expect((await lookup("/p/zwei/lookup/shellsByAssetLink")).result).toEqual([
@@ -105,14 +103,16 @@ describe("Discovery mit mehreren Proxys", () => {
     ]);
   });
 
-  it("gibt es unter einer unbekannten Kennung nicht", async () => {
+  it("gibt es weder an der Wurzel noch unter einer unbekannten Kennung", async () => {
     stand = mitZweitem();
-    const antwort = await roheAnfrage(stand.app, "/p/gibtsnicht/lookup/shellsByAssetLink", {
-      methode: "POST",
-      kopfzeilen: { "content-type": "application/json", "content-length": "2" },
-      koerper: "[]",
-    });
-    expect(antwort.status).toBe(404);
+    for (const pfad of ["/lookup/shellsByAssetLink", "/p/gibtsnicht/lookup/shellsByAssetLink"]) {
+      const antwort = await roheAnfrage(stand.app, pfad, {
+        methode: "POST",
+        kopfzeilen: { "content-type": "application/json", "content-length": "2" },
+        koerper: "[]",
+      });
+      expect(antwort.status, pfad).toBe(404);
+    }
   });
 });
 
@@ -121,13 +121,11 @@ describe("Swagger mit mehreren Proxys", () => {
     stand = mitZweitem(() => new Response(JSON.stringify(vorlage)));
     stand.einstellungen.schreiben({ proxyBasis: "https://dti-proxy.test" });
 
-    const standard = await roheAnfrage(stand.app, "/swagger/aas/swagger.json");
+    const eins = await roheAnfrage(stand.app, PRUEF_BASIS + "/swagger/aas/swagger.json");
     const zwei = await roheAnfrage(stand.app, "/p/zwei/swagger/aas/swagger.json");
 
-    expect((JSON.parse(standard.koerper) as OpenApiDokument).servers).toEqual([{ url: "https://dti-proxy.test" }]);
-    expect((JSON.parse(zwei.koerper) as OpenApiDokument).servers).toEqual([
-      { url: "https://dti-proxy.test/p/zwei" },
-    ]);
+    expect((JSON.parse(eins.koerper) as OpenApiDokument).servers).toEqual([{ url: "https://dti-proxy.test/p/eins" }]);
+    expect((JSON.parse(zwei.koerper) as OpenApiDokument).servers).toEqual([{ url: "https://dti-proxy.test/p/zwei" }]);
   });
 
   it("holt die Spec je Zielsystem getrennt", async () => {
@@ -137,7 +135,7 @@ describe("Swagger mit mehreren Proxys", () => {
       return new Response(JSON.stringify(vorlage));
     });
 
-    await roheAnfrage(stand.app, "/swagger/aas/swagger.json");
+    await roheAnfrage(stand.app, PRUEF_BASIS + "/swagger/aas/swagger.json");
     await roheAnfrage(stand.app, "/p/zwei/swagger/aas/swagger.json");
 
     expect(gefragt).toEqual([
@@ -161,5 +159,25 @@ describe("Swagger mit mehreren Proxys", () => {
 
     expect(antwort.status).toBe(302);
     expect(antwort.kopfzeilen.location).toBe("/p/zwei/swagger/index.html");
+  });
+});
+
+describe("Proxys anlegen und loeschen", () => {
+  it("laesst auch den letzten loeschen", async () => {
+    stand = mitZweitem();
+    expect(stand.proxys.loeschen("zwei")).toBeNull();
+    expect(stand.proxys.loeschen("eins")).toBeNull();
+    expect(stand.proxys.alle()).toHaveLength(0);
+  });
+
+  // Die Kennung steht in der Adresse. Wuerde sie beim Umbenennen mitwandern,
+  // braeche die Adresse allen Aufrufern weg.
+  it("laesst die Kennung beim Umbenennen stehen", async () => {
+    stand = mitZweitem();
+    stand.proxys.aendern("zwei", { name: "Ganz anderer Name" });
+
+    expect(stand.proxys.nachKennung("zwei")!.name).toBe("Ganz anderer Name");
+    const antwort = await roheAnfrage(stand.app, "/p/zwei/description");
+    expect(antwort.status).toBe(200);
   });
 });

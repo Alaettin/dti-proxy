@@ -7,10 +7,26 @@ export interface ProxyAnsicht {
   upstreamBasis: string;
   aasBasis: string;
   zeitlimitMs: number;
-  standard: boolean;
   angelegtAm: string;
   basisUrl: string;
   basisPfad: string;
+}
+
+/**
+ * Derselbe Vorschlag wie auf dem Server, damit man die entstehende Adresse
+ * schon beim Tippen sieht. Der Server entscheidet trotzdem selbst.
+ */
+export function kennungAus(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
 }
 
 interface Meldung {
@@ -173,10 +189,22 @@ export function Uebersicht({
   neuLaden: () => Promise<void>;
 }): React.ReactElement {
   const [neu, setzeNeu] = useState<Record<string, string>>(LEERER_PROXY);
-  const [formularOffen, setzeFormularOffen] = useState(false);
+  // Ohne Proxy ist das Formular der einzige sinnvolle Inhalt, also offen.
+  const [formularOffen, setzeFormularOffen] = useState(proxys.length === 0);
+  const [kennungVonHand, setzeKennungVonHand] = useState(false);
   const [meldung, setzeMeldung] = useState<Meldung | null>(null);
   const [pruefungen, setzePruefungen] = useState<Record<string, string>>({});
   const [laeuft, setzeLaeuft] = useState(false);
+
+  /** Solange niemand die Kennung angefasst hat, folgt sie dem Namen. */
+  function neuSetzen(werte: Record<string, string>): void {
+    if (werte.kennung !== neu.kennung) {
+      setzeKennungVonHand(true);
+      setzeNeu(werte);
+      return;
+    }
+    setzeNeu(kennungVonHand ? werte : { ...werte, kennung: kennungAus(werte.name ?? "") });
+  }
 
   async function anlegen(): Promise<void> {
     setzeLaeuft(true);
@@ -189,6 +217,7 @@ export function Uebersicht({
         return;
       }
       setzeNeu(LEERER_PROXY);
+      setzeKennungVonHand(false);
       setzeFormularOffen(false);
       setzeMeldung({ art: "gut", text: "Der Proxy ist angelegt." });
       await neuLaden();
@@ -241,8 +270,9 @@ export function Uebersicht({
       <div className="karte">
         <h2>Proxys</h2>
         <p className="hinweis">
-          Jeder Proxy reicht die zehn AAS-Aufrufe an sein eigenes Zielsystem weiter und ergänzt Discovery. Der
-          Standardproxy ist zusätzlich direkt an der Wurzel erreichbar, ohne Präfix.
+          {proxys.length === 0
+            ? "Noch kein Proxy angelegt. Ein Proxy braucht einen Namen und ein Zielsystem, danach ist er unter seiner eigenen Basis-URL erreichbar."
+            : "Jeder Proxy reicht die zehn AAS-Aufrufe an sein eigenes Zielsystem weiter und ergänzt Discovery. Jeder liegt unter seiner eigenen Kennung."}
         </p>
         <Meldungsfeld meldung={meldung} />
       </div>
@@ -251,7 +281,6 @@ export function Uebersicht({
         <div className={`karte ${proxy.kennung === gewaehlt ? "gewaehlt" : ""}`} key={proxy.kennung}>
           <h2>
             {proxy.name}
-            {proxy.standard && <span className="schild neutral abstand-links">Standard</span>}
             {proxy.kennung === gewaehlt && <span className="schild gut abstand-links">Gewählt</span>}
           </h2>
           <p className="hinweis">Zielsystem {proxy.upstreamBasis}</p>
@@ -269,15 +298,6 @@ export function Uebersicht({
             <button className="tat still" type="button" onClick={() => void pruefen(proxy.kennung)}>
               Prüfen
             </button>
-            {!proxy.standard && (
-              <button
-                className="tat still"
-                type="button"
-                onClick={() => void tun(`/admin/api/proxys/${proxy.kennung}/standard`, "POST", `„${proxy.name}" ist jetzt der Standard.`)}
-              >
-                Als Standard
-              </button>
-            )}
             <button
               className="tat still"
               type="button"
@@ -298,15 +318,25 @@ export function Uebersicht({
         {formularOffen ? (
           <>
             <h2>Proxy anlegen</h2>
-            <p className="hinweis">Bleibt die Kennung leer, wird sie aus dem Namen abgeleitet.</p>
-            <ProxyFormular werte={neu} setzen={setzeNeu} />
-            <div className="knopfreihe">
+            <p className="hinweis">
+              Die Kennung folgt dem Namen, bis man sie einmal selbst anfasst. Sie steht in der Adresse und ändert sich
+              später nicht mehr von allein, damit sie den Aufrufern nicht wegbricht.
+            </p>
+            <ProxyFormular werte={neu} setzen={neuSetzen} />
+            {(neu.kennung ?? "") !== "" && (
+              <div className="basis">
+                <code>/p/{neu.kennung}</code>
+              </div>
+            )}
+            <div className="knopfreihe abstand">
               <button className="tat" type="button" onClick={() => void anlegen()} disabled={laeuft}>
                 {laeuft ? "Legt an …" : "Anlegen"}
               </button>
-              <button className="tat still" type="button" onClick={() => setzeFormularOffen(false)}>
-                Abbrechen
-              </button>
+              {proxys.length > 0 && (
+                <button className="tat still" type="button" onClick={() => setzeFormularOffen(false)}>
+                  Abbrechen
+                </button>
+              )}
             </div>
           </>
         ) : (
@@ -874,12 +904,10 @@ export function App(): React.ReactElement | null {
     if (!antwort.ok) return;
     const inhalt = (await antwort.json()) as { proxys: ProxyAnsicht[] };
     setzeProxys(inhalt.proxys);
-    // Die Auswahl wird abgeleitet, nicht nachgehalten: ist der gewaehlte Proxy
-    // weg, faellt sie auf den Standard zurueck.
+    // Die Auswahl wird an der Liste geprueft, nicht blind nachgehalten: ist
+    // der gewaehlte Proxy weg, faellt sie auf den ersten zurueck.
     setzeGewaehlt((vorher) =>
-      inhalt.proxys.some((p) => p.kennung === vorher)
-        ? vorher
-        : (inhalt.proxys.find((p) => p.standard)?.kennung ?? inhalt.proxys[0]?.kennung ?? ""),
+      inhalt.proxys.some((p) => p.kennung === vorher) ? vorher : (inhalt.proxys[0]?.kennung ?? ""),
     );
   }, []);
 
@@ -925,7 +953,6 @@ export function App(): React.ReactElement | null {
               {proxys.map((proxy) => (
                 <option key={proxy.kennung} value={proxy.kennung}>
                   {proxy.name}
-                  {proxy.standard ? " (Standard)" : ""}
                 </option>
               ))}
             </select>
@@ -963,6 +990,18 @@ export function App(): React.ReactElement | null {
           waehlen={(kennung) => setzeGewaehlt(kennung)}
           neuLaden={laden}
         />
+      )}
+      {proxys !== null && reiter !== "uebersicht" && aktiv === null && (
+        <div className="karte">
+          <h2>Kein Proxy gewählt</h2>
+          <p className="hinweis">
+            Einstellungen und API gehören immer zu einem bestimmten Proxy. In der Übersicht einen anlegen oder
+            auswählen.
+          </p>
+          <button className="tat" type="button" onClick={() => setzeReiter("uebersicht")}>
+            Zur Übersicht
+          </button>
+        </div>
       )}
       {proxys !== null && reiter === "einstellungen" && aktiv !== null && (
         <Einstellungen proxy={aktiv} neuLaden={laden} />

@@ -18,9 +18,12 @@ Die Tests "reicht den rohen Pfad zeichengenau nach oben" und "schneidet den Rest
 
 ## Mehrere Proxys
 
-Ein Dienst trägt mehrere Proxys, Tabelle `proxys`. Jeder liegt unter `/p/<kennung>`, genau einer
-ist Standard und zusätzlich an der Wurzel erreichbar. Der Standard wird von einem partiellen
-eindeutigen Index erzwungen, nicht nur vom Code.
+Ein Dienst trägt mehrere Proxys, Tabelle `proxys`. Jeder liegt unter `/p/<kennung>`, alle sind
+gleichberechtigt. **Keinen Standard wieder einführen**, und nichts an die Wurzel legen: das war
+schon einmal da und hat nur Sonderfälle erzeugt.
+
+Die Kennung steht in der Adresse und darf sich beim Umbenennen nicht ändern, sonst bricht sie
+den Aufrufern weg. Sie wird nur abgeleitet, wenn beim Anlegen keine angegeben ist.
 
 `upstreamBasis`, `aasBasis` und `zeitlimitMs` gehören je Proxy in die Tabelle. In
 `einstellungen` steht nur noch `proxyBasis`, die öffentliche Basis des Dienstes.

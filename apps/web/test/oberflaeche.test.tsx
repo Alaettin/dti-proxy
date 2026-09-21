@@ -18,42 +18,39 @@ function text(markup: string): string {
     .replace(/\s+/g, " ");
 }
 
-const STANDARD: ProxyAnsicht = {
-  kennung: "standard",
-  name: "Standard",
+const ERSTER: ProxyAnsicht = {
+  kennung: "rc",
+  name: "RC",
   upstreamBasis: "https://rc.test",
   aasBasis: "https://viewer.test",
   zeitlimitMs: 30_000,
-  standard: true,
   angelegtAm: "2026-09-21T00:00:00.000Z",
-  basisUrl: "https://dti-proxy.test",
-  basisPfad: "",
+  basisUrl: "https://dti-proxy.test/p/rc",
+  basisPfad: "/p/rc",
 };
 
 const ZWEITER: ProxyAnsicht = {
-  ...STANDARD,
+  ...ERSTER,
   kennung: "kunde-a",
   name: "Kunde A",
   upstreamBasis: "https://kunde-a.test",
-  standard: false,
   basisUrl: "https://dti-proxy.test/p/kunde-a",
   basisPfad: "/p/kunde-a",
 };
 
 const UEBERSICHT = renderToStaticMarkup(
-  <Uebersicht
-    proxys={[STANDARD, ZWEITER]}
-    gewaehlt="standard"
-    waehlen={() => undefined}
-    neuLaden={async () => undefined}
-  />,
+  <Uebersicht proxys={[ERSTER, ZWEITER]} gewaehlt="rc" waehlen={() => undefined} neuLaden={async () => undefined} />,
 );
 
-const API_STANDARD = renderToStaticMarkup(<ApiReiter proxy={STANDARD} />);
+const LEERE_UEBERSICHT = renderToStaticMarkup(
+  <Uebersicht proxys={[]} gewaehlt="" waehlen={() => undefined} neuLaden={async () => undefined} />,
+);
+
+const API_ERSTER = renderToStaticMarkup(<ApiReiter proxy={ERSTER} />);
 const API_ZWEITER = renderToStaticMarkup(<ApiReiter proxy={ZWEITER} />);
 const FORMULAR = renderToStaticMarkup(<ProxyFormular werte={{}} setzen={() => undefined} />);
 
-const SICHTBAR = text(UEBERSICHT + API_STANDARD + FORMULAR);
+const SICHTBAR = text(UEBERSICHT + LEERE_UEBERSICHT + API_ERSTER + FORMULAR);
 
 describe("Rendervorgang", () => {
   it("laeuft ohne Ausnahme durch, auch ohne window und ohne Ablage", () => {
@@ -62,14 +59,14 @@ describe("Rendervorgang", () => {
 
   it("zeigt alle elf Aufrufe", () => {
     for (const aufruf of AUFRUFE) {
-      expect(text(API_STANDARD), aufruf.id).toContain(aufruf.vorlage);
+      expect(text(API_ERSTER), aufruf.id).toContain(aufruf.vorlage);
     }
     expect(AUFRUFE).toHaveLength(11);
   });
 
   it("zeigt jede Gruppe als Ueberschrift", () => {
     for (const gruppe of new Set(AUFRUFE.map((aufruf) => aufruf.gruppe))) {
-      expect(text(API_STANDARD)).toContain(gruppe);
+      expect(text(API_ERSTER)).toContain(gruppe);
     }
   });
 });
@@ -77,28 +74,36 @@ describe("Rendervorgang", () => {
 describe("Uebersicht", () => {
   it("zeigt jeden Proxy mit Namen, Ziel und Basis-URL", () => {
     const sichtbar = text(UEBERSICHT);
-    for (const proxy of [STANDARD, ZWEITER]) {
+    for (const proxy of [ERSTER, ZWEITER]) {
       expect(sichtbar, proxy.kennung).toContain(proxy.name);
       expect(sichtbar, proxy.kennung).toContain(proxy.upstreamBasis);
       expect(sichtbar, proxy.kennung).toContain(proxy.basisUrl);
     }
   });
 
-  it("kennzeichnet den Standard und die Auswahl", () => {
-    expect(text(UEBERSICHT)).toContain("Standard");
+  it("kennzeichnet die Auswahl", () => {
     expect(text(UEBERSICHT)).toContain("Gewählt");
   });
 
   it("verweist je Proxy auf dessen eigene Swagger-Seite", () => {
-    expect(UEBERSICHT).toContain('href="/swagger/index.html"');
+    expect(UEBERSICHT).toContain('href="/p/rc/swagger/index.html"');
     expect(UEBERSICHT).toContain('href="/p/kunde-a/swagger/index.html"');
   });
 
-  it("bietet das Loeschen nur mit Rueckfrage an und den Standard nicht als Standard", () => {
-    // "Als Standard" darf beim Standard selbst nicht auftauchen, sonst klickt
-    // man einen Knopf, der nichts tut.
-    const treffer = text(UEBERSICHT).match(/Als Standard/g) ?? [];
-    expect(treffer).toHaveLength(1);
+  // Kein Proxy hat einen Sonderplatz mehr.
+  it("kennt keinen Standard mehr", () => {
+    expect(text(UEBERSICHT)).not.toContain("Als Standard");
+    expect(text(UEBERSICHT)).not.toMatch(/\bStandard\b/);
+  });
+
+  // Ohne Proxy waere der Bildschirm sonst leer und man faende nicht heraus,
+  // was zu tun ist.
+  it("laedt ohne Proxy zum Anlegen ein", () => {
+    const sichtbar = text(LEERE_UEBERSICHT);
+    expect(sichtbar).toContain("Noch kein Proxy angelegt");
+    expect(sichtbar).toContain("Anlegen");
+    // Kein Abbrechen, es gibt nichts, wohin man abbrechen koennte.
+    expect(sichtbar).not.toContain("Abbrechen");
   });
 });
 
@@ -106,9 +111,12 @@ describe("API-Reiter je Proxy", () => {
   // Der eigentliche Punkt bei mehreren Proxys: die Adressen muessen sich
   // unterscheiden, sonst fragt man immer dasselbe Ziel.
   it("traegt das Praefix des gewaehlten Proxys in jeder Adresse", () => {
-    expect(text(API_STANDARD)).toContain("/shells/{aasIdentifier}");
+    expect(text(API_ERSTER)).toContain("/p/rc/shells/{aasIdentifier}");
     expect(text(API_ZWEITER)).toContain("/p/kunde-a/shells/{aasIdentifier}");
+    // Keine Adresse ohne Praefix, sonst zeigte sie auf die Wurzel und damit
+    // auf niemanden.
     expect(text(API_ZWEITER)).not.toMatch(/(?<!\/p\/kunde-a)\/shells\/\{aasIdentifier\}/);
+    expect(text(API_ERSTER)).not.toMatch(/(?<!\/p\/rc)\/shells\/\{aasIdentifier\}/);
   });
 
   it("nennt die Basis-URL des Proxys im Hinweis", () => {

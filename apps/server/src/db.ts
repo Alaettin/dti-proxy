@@ -5,21 +5,38 @@ import { konfiguration } from "./konfiguration.js";
 
 export type Datenbank = Database.Database;
 
-/** Vorgaben fuer den ersten Proxy, wenn noch keiner da ist. */
+/** Vorgaben fuer den Proxy, der aus einem alten Stand hervorgeht. */
 export const PROXY_VORGABEN = {
   upstreamBasis: "https://rc.test.dti.neoception.dev",
   aasBasis: "https://viewer-rc.test.dti.neoception.dev",
   zeitlimitMs: 30_000,
 } as const;
 
+function spalten(db: Datenbank, tabelle: string): string[] {
+  const zeilen = db.prepare(`PRAGMA table_info(${tabelle})`).all() as { name: string }[];
+  return zeilen.map((zeile) => zeile.name);
+}
+
 /**
- * Legt den ersten Proxy an, wenn noch keiner da ist. Aus den alten globalen
- * Einstellungen, falls dort welche stehen: eine bestehende Installation soll
- * nach dem Wechsel auf mehrere Proxys unveraendert weiterlaufen.
- *
- * Idempotent, laeuft bei jedem Start.
+ * Wanderung vom Zwischenstand, in dem ein Proxy als Standard ausgezeichnet war
+ * und zusaetzlich an der Wurzel lag. Die Sonderrolle ist weggefallen, alle
+ * Proxys sind gleich. Die Zeilen bleiben, nur die Spalte geht.
  */
-function ersteinrichtung(db: Datenbank): void {
+function standardAbbauen(db: Datenbank): void {
+  if (!spalten(db, "proxys").includes("standard")) return;
+  db.exec("DROP INDEX IF EXISTS proxys_ein_standard");
+  db.exec("ALTER TABLE proxys DROP COLUMN standard");
+}
+
+/**
+ * Wanderung vom ersten Stand, in dem der Dienst genau ein Zielsystem trug und
+ * die Werte global in `einstellungen` standen. Eine bestehende Installation
+ * soll nach dem Wechsel auf mehrere Proxys unveraendert weiterlaufen.
+ *
+ * Eine wirklich frische Datenbank bleibt leer: dort legt man den ersten Proxy
+ * in der Uebersicht an.
+ */
+function altenStandUebernehmen(db: Datenbank): void {
   const vorhanden = db.prepare("SELECT COUNT(*) AS zahl FROM proxys").get() as { zahl: number };
   if (vorhanden.zahl > 0) return;
 
@@ -28,11 +45,12 @@ function ersteinrichtung(db: Datenbank): void {
       (zeile) => [zeile.schluessel, zeile.wert],
     ),
   );
-  const zeitlimit = Number(alt.get("zeitlimitMs"));
+  if (!alt.has("upstreamBasis") && !alt.has("aasBasis") && !alt.has("zeitlimitMs")) return;
 
+  const zeitlimit = Number(alt.get("zeitlimitMs"));
   db.prepare(
-    `INSERT INTO proxys (kennung, name, upstreamBasis, aasBasis, zeitlimitMs, standard, angelegtAm)
-     VALUES (?, ?, ?, ?, ?, 1, ?)`,
+    `INSERT INTO proxys (kennung, name, upstreamBasis, aasBasis, zeitlimitMs, angelegtAm)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(
     "standard",
     "Standard",
@@ -66,15 +84,10 @@ export function datenbankOeffnen(datei: string = konfiguration.datenbankDatei): 
       upstreamBasis TEXT    NOT NULL,
       aasBasis      TEXT    NOT NULL,
       zeitlimitMs   INTEGER NOT NULL,
-      standard      INTEGER NOT NULL DEFAULT 0,
       angelegtAm    TEXT    NOT NULL
     );
-
-    -- Genau ein Standard, und zwar von der Datenbank erzwungen. Eine Regel, die
-    -- nur im Code steht, haelt genau so lange wie der naechste neue Schreibweg.
-    CREATE UNIQUE INDEX IF NOT EXISTS proxys_ein_standard
-      ON proxys (standard) WHERE standard = 1;
   `);
-  ersteinrichtung(db);
+  standardAbbauen(db);
+  altenStandUebernehmen(db);
   return db;
 }

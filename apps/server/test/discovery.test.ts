@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { aasIdBauen, itemIdAus } from "../src/routen/discovery.js";
-import { pruefstand, roheAnfrage, type Pruefstand } from "./hilfe.js";
+import { PRUEF_BASIS, PRUEF_KENNUNG, pruefstand, roheAnfrage, type Pruefstand } from "./hilfe.js";
 
 let stand: Pruefstand | undefined;
 
@@ -16,7 +16,7 @@ interface Antwort {
 
 async function lookup(pfadZusatz: string, koerper: unknown): Promise<Antwort> {
   const text = typeof koerper === "string" ? koerper : JSON.stringify(koerper);
-  const antwort = await roheAnfrage(stand!.app, "/lookup/shellsByAssetLink" + pfadZusatz, {
+  const antwort = await roheAnfrage(stand!.app, PRUEF_BASIS + "/lookup/shellsByAssetLink" + pfadZusatz, {
     methode: "POST",
     kopfzeilen: { "content-type": "application/json", "content-length": String(Buffer.byteLength(text)) },
     koerper: text,
@@ -105,7 +105,7 @@ describe("POST /lookup/shellsByAssetLink", () => {
 
   it("nutzt die Basis aus den Einstellungen", async () => {
     stand = pruefstand();
-    stand.proxys.aendern("standard", { aasBasis: "https://anders.test/unterpfad" });
+    stand.proxys.aendern(PRUEF_KENNUNG, { aasBasis: "https://anders.test/unterpfad" });
     const antwort = await lookup("", [{ name: "globalAssetId", value: "https://egal.test/4711" }]);
 
     expect(antwort.koerper.result).toEqual(["https://anders.test/unterpfad/aas?itemId=4711"]);

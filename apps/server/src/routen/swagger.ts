@@ -86,8 +86,8 @@ export function swaggerRouter(einstellungen: Einstellungen, proxys: Proxys, quel
       return;
     }
 
-    // Kurzform: /swagger und der blanke Proxy-Weg fuehren auf die Seite.
-    if (ohneQuery === "/swagger" || (zustaendig.benannt && (ohneQuery === "" || ohneQuery === "/"))) {
+    // Kurzformen: /p/<kennung>/swagger und der blanke Proxy-Weg.
+    if (ohneQuery === "/swagger" || ohneQuery === "" || ohneQuery === "/") {
       res.redirect(302, basisPfad + SEITE_REST);
       return;
     }

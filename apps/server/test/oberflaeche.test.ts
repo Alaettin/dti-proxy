@@ -68,10 +68,9 @@ describe("Wurzel", () => {
     expect(antwort.kopfzeilen.location).toBe("/admin/");
   });
 
-  it("laesst die Swagger-Seite des Standards an ihrem Platz", async () => {
+  // Es gibt keinen Proxy an der Wurzel mehr, also auch keine Swagger-Seite dort.
+  it("hat an der Wurzel keine Swagger-Seite mehr", async () => {
     stand = pruefstand(undefined, { webVerzeichnis });
-    const antwort = await roheAnfrage(stand.app, "/swagger");
-    expect(antwort.status).toBe(302);
-    expect(antwort.kopfzeilen.location).toBe("/swagger/index.html");
+    expect((await roheAnfrage(stand.app, "/swagger")).status).toBe(404);
   });
 });

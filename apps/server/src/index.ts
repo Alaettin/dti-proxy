@@ -10,10 +10,15 @@ const proxys = new Proxys(db);
 const app = appAnlegen({ einstellungen, proxys });
 
 const server = app.listen(konfiguration.port, () => {
-  console.log(`DTI Proxy läuft auf Port ${konfiguration.port}`);
-  for (const proxy of proxys.alle()) {
-    const wo = proxy.standard ? "/ (Standard)" : `/p/${proxy.kennung}`;
-    console.log(`  ${wo.padEnd(24)} -> ${proxy.upstreamBasis}`);
+  // Ohne Umlaute: die Zeichentabelle des Konsolenfensters macht daraus sonst
+  // Buchstabensalat. Dieselbe Ueberlegung wie in start.bat.
+  console.log(`DTI Proxy laeuft auf Port ${konfiguration.port}`);
+  const alle = proxys.alle();
+  if (alle.length === 0) {
+    console.log("  Noch kein Proxy angelegt, das geht in der Verwaltung unter /admin");
+  }
+  for (const proxy of alle) {
+    console.log(`  /p/${proxy.kennung}`.padEnd(26) + `-> ${proxy.upstreamBasis}`);
   }
   console.log(`Datenbank: ${konfiguration.datenbankDatei}`);
 });
