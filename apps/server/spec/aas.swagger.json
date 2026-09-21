@@ -1,0 +1,417 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "AAS Standardized API",
+    "version": "v3"
+  },
+  "servers": [
+    {
+      "url": "https://rc.test.dti.neoception.dev"
+    }
+  ],
+  "paths": {
+    "/shells/{aasIdentifier}": {
+      "get": {
+        "tags": [
+          "AssetAdministrationShellRepository"
+        ],
+        "parameters": [
+          {
+            "name": "aasIdentifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/shells/{aasIdentifier}/asset-information": {
+      "get": {
+        "tags": [
+          "AssetAdministrationShellRepository"
+        ],
+        "parameters": [
+          {
+            "name": "aasIdentifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/shells/{aasIdentifier}/asset-information/thumbnail": {
+      "get": {
+        "tags": [
+          "AssetAdministrationShellRepository"
+        ],
+        "parameters": [
+          {
+            "name": "aasIdentifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/shells/{aasIdentifier}/submodel-refs": {
+      "get": {
+        "tags": [
+          "AssetAdministrationShellRepository"
+        ],
+        "parameters": [
+          {
+            "name": "aasIdentifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/shells/{aasIdentifier}/submodels/{submodelIdentifier}": {
+      "get": {
+        "tags": [
+          "AssetAdministrationShellRepository"
+        ],
+        "parameters": [
+          {
+            "name": "aasIdentifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "submodelIdentifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/Level"
+            }
+          },
+          {
+            "name": "extent",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/Extent"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/description": {
+      "get": {
+        "tags": [
+          "Description"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DescriptionResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/DescriptionResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DescriptionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/serialization": {
+      "get": {
+        "tags": [
+          "Serialization"
+        ],
+        "parameters": [
+          {
+            "name": "aasIds",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "submodelIds",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "includeConceptDescriptions",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "serializationFormat",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SerializationFormat"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/submodels/{submodelIdentifier}": {
+      "get": {
+        "tags": [
+          "SubmodelRepository"
+        ],
+        "parameters": [
+          {
+            "name": "submodelIdentifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/Level"
+            }
+          },
+          {
+            "name": "extent",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/Extent"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/submodels/{submodelIdentifier}/submodel-elements/{idShortPath}": {
+      "get": {
+        "tags": [
+          "SubmodelRepository"
+        ],
+        "parameters": [
+          {
+            "name": "submodelIdentifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idShortPath",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/submodels/{submodelIdentifier}/submodel-elements/{idShortPath}/attachment": {
+      "get": {
+        "tags": [
+          "SubmodelRepository"
+        ],
+        "parameters": [
+          {
+            "name": "submodelIdentifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idShortPath",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AasApiProfiles": {
+        "enum": [
+          "AssetAdministrationShellServiceSpecificationSSP001Enum",
+          "AssetAdministrationShellServiceSpecificationSSP002Enum",
+          "SubmodelServiceSpecificationSSP001Enum",
+          "SubmodelServiceSpecificationSSP002Enum",
+          "SubmodelServiceSpecificationSSP003Enum",
+          "AasxFileServerServiceSpecificationSSP001Enum",
+          "AssetAdministrationShellRegistryServiceSpecificationSSP001Enum",
+          "AssetAdministrationShellRegistryServiceSpecificationSSP002Enum",
+          "SubmodelRegistryServiceSpecificationSSP001Enum",
+          "SubmodelRegistryServiceSpecificationSSP002Enum",
+          "DiscoveryServiceSpecificationSSP001Enum",
+          "AssetAdministrationShellRepositoryServiceSpecificationSSP001Enum",
+          "AssetAdministrationShellRepositoryServiceSpecificationSSP002Enum",
+          "SubmodelRepositoryServiceSpecificationSSP001Enum",
+          "SubmodelRepositoryServiceSpecificationSSP002Enum",
+          "SubmodelRepositoryServiceSpecificationSSP003Enum",
+          "SubmodelRepositoryServiceSpecificationSSP004Enum",
+          "ConceptDescriptionServiceSpecificationSSP001Enum"
+        ],
+        "type": "string",
+        "format": "int32"
+      },
+      "DescriptionResponse": {
+        "type": "object",
+        "properties": {
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AasApiProfiles"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "Extent": {
+        "enum": [
+          "WithBlobValue",
+          "WithoutBlobValue"
+        ],
+        "type": "string",
+        "format": "int32"
+      },
+      "Level": {
+        "enum": [
+          "Deep",
+          "Core"
+        ],
+        "type": "string",
+        "format": "int32"
+      },
+      "SerializationFormat": {
+        "enum": [
+          "JSON",
+          "XML",
+          "AASX"
+        ],
+        "type": "string",
+        "format": "int32"
+      }
+    },
+    "securitySchemes": {
+      "oauth2": {
+        "type": "oauth2",
+        "description": "Enter client to be redirect to a login page",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://auth-rc.test.dti.neoception.dev/realms/dti/protocol/openid-connect/auth",
+            "tokenUrl": "https://auth-rc.test.dti.neoception.dev/realms/dti/protocol/openid-connect/token",
+            "scopes": { }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "oauth2": [ ]
+    }
+  ],
+  "tags": [
+    {
+      "name": "AssetAdministrationShellRepository"
+    },
+    {
+      "name": "Description"
+    },
+    {
+      "name": "Serialization"
+    },
+    {
+      "name": "SubmodelRepository"
+    }
+  ]
+}

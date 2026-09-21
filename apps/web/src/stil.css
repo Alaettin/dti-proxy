@@ -1,0 +1,208 @@
+:root {
+  --grund: #0e1116;
+  --karte: #161b22;
+  --rand: #262d38;
+  --schrift: #e6edf3;
+  --gedaempft: #8b949e;
+  --akzent: #3b82f6;
+  --gut: #2ea043;
+  --schlecht: #f85149;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--grund);
+  color: var(--schrift);
+  font: 15px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+a {
+  color: var(--akzent);
+}
+
+.rahmen {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+.kopf {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.kopf h1 {
+  font-size: 20px;
+  margin: 0;
+  letter-spacing: 0.2px;
+}
+
+.kopf p {
+  margin: 4px 0 0;
+  color: var(--gedaempft);
+  font-size: 13px;
+}
+
+.reiter {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--rand);
+  margin-bottom: 24px;
+}
+
+.reiter button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--gedaempft);
+  padding: 10px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.reiter button[aria-selected="true"] {
+  color: var(--schrift);
+  border-bottom-color: var(--akzent);
+}
+
+.karte {
+  background: var(--karte);
+  border: 1px solid var(--rand);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.karte h2 {
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+
+.karte .hinweis {
+  color: var(--gedaempft);
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+label {
+  display: block;
+  margin-bottom: 16px;
+}
+
+label span {
+  display: block;
+  font-size: 13px;
+  color: var(--gedaempft);
+  margin-bottom: 6px;
+}
+
+input,
+textarea {
+  width: 100%;
+  background: var(--grund);
+  border: 1px solid var(--rand);
+  border-radius: 6px;
+  color: var(--schrift);
+  padding: 9px 11px;
+  font: inherit;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--akzent);
+}
+
+textarea {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  min-height: 96px;
+  resize: vertical;
+}
+
+button.tat {
+  background: var(--akzent);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  padding: 9px 16px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.tat.still {
+  background: transparent;
+  border: 1px solid var(--rand);
+  color: var(--schrift);
+}
+
+button.tat:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.knopfreihe {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.meldung {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  border: 1px solid var(--rand);
+}
+
+.meldung.gut {
+  border-color: var(--gut);
+  color: #7ee787;
+}
+
+.meldung.schlecht {
+  border-color: var(--schlecht);
+  color: #ffa198;
+}
+
+pre {
+  background: var(--grund);
+  border: 1px solid var(--rand);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  margin: 0;
+}
+
+.basis {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.basis code {
+  flex: 1;
+  background: var(--grund);
+  border: 1px solid var(--rand);
+  border-radius: 6px;
+  padding: 9px 11px;
+  font-size: 13px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.anmeldung {
+  max-width: 380px;
+  margin: 12vh auto 0;
+}
