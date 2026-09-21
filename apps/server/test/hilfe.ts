@@ -2,9 +2,10 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Express } from "express";
 import { appAnlegen } from "../src/app.js";
-import { datenbankOeffnen } from "../src/db.js";
+import { datenbankOeffnen, type Datenbank } from "../src/db.js";
 import { Einstellungen } from "../src/einstellungen.js";
 import type { Uhr } from "../src/fehler.js";
+import { Proxys } from "../src/proxys.js";
 
 /** Feste Uhr, damit Zeitstempel in Zusicherungen nicht mit der Zeit umfallen. */
 export const FESTE_ZEIT = "2026-09-18T09:12:44.000Z";
@@ -23,6 +24,8 @@ export interface Aufruf {
 export interface Pruefstand {
   app: Express;
   einstellungen: Einstellungen;
+  proxys: Proxys;
+  db: Datenbank;
   aufrufe: Aufruf[];
   schliessen: () => void;
 }
@@ -33,7 +36,9 @@ export function pruefstand(
 ): Pruefstand {
   const db = datenbankOeffnen(":memory:");
   const einstellungen = new Einstellungen(db);
-  einstellungen.schreiben({ upstreamBasis: "https://oben.beispiel.test" });
+  const proxys = new Proxys(db);
+  // Der Standardproxy der Ersteinrichtung zeigt im Pruefstand auf die Attrappe.
+  proxys.aendern("standard", { upstreamBasis: "https://oben.beispiel.test" });
   const aufrufe: Aufruf[] = [];
 
   const holen: typeof fetch = async (eingabe, init) => {
@@ -66,6 +71,7 @@ export function pruefstand(
   return {
     app: appAnlegen({
       einstellungen,
+      proxys,
       holen,
       uhr: festeUhr,
       benutzer: TEST_BENUTZER,
@@ -76,6 +82,8 @@ export function pruefstand(
       webVerzeichnis: optionen.webVerzeichnis ?? null,
     }),
     einstellungen,
+    proxys,
+    db,
     aufrufe,
     schliessen: () => db.close(),
   };

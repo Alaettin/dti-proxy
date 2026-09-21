@@ -104,6 +104,18 @@ describe("urlBauen", () => {
     expect(urlBauen(nimm("description"), {}, true)).toBe("/description");
   });
 
+  // Mit mehreren Proxys entscheidet das Praefix, welches Ziel gefragt wird.
+  it("stellt das Praefix des Proxys voran", () => {
+    expect(urlBauen(nimm("description"), {}, true, "/p/kunde-a")).toBe("/p/kunde-a/description");
+    const mitQuery = urlBauen(nimm("submodel"), { submodelIdentifier: "https://a.test/1", level: "Deep" }, true, "/p/zwei");
+    expect(mitQuery.startsWith("/p/zwei/submodels/")).toBe(true);
+    expect(mitQuery.endsWith("?level=Deep")).toBe(true);
+  });
+
+  it("laesst den Standard ohne Praefix", () => {
+    expect(urlBauen(nimm("description"), {}, true, "")).toBe("/description");
+  });
+
   it("nimmt fehlende Werte als leer, statt den Platzhalter stehen zu lassen", () => {
     expect(urlBauen(nimm("shell"), {}, true)).toBe("/shells/");
   });

@@ -1,20 +1,25 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { AUFRUFE, curlBauen, urlBauen, type Aufruf, type Parameter } from "./aufrufe.js";
 
-interface Werte {
+export interface ProxyAnsicht {
+  kennung: string;
+  name: string;
   upstreamBasis: string;
-  proxyBasis: string;
   aasBasis: string;
-  zeitlimitMs: string;
-}
-
-interface Geladen {
-  werte: Werte;
-  proxyBasisEffektiv: string;
+  zeitlimitMs: number;
+  standard: boolean;
+  angelegtAm: string;
+  basisUrl: string;
+  basisPfad: string;
 }
 
 interface Meldung {
   art: "gut" | "schlecht";
+  text: string;
+}
+
+interface Verstoss {
+  feld: string;
   text: string;
 }
 
@@ -24,6 +29,10 @@ async function hole(pfad: string, optionen: RequestInit = {}): Promise<Response>
     headers: optionen.body === undefined ? undefined : { "content-type": "application/json" },
     ...optionen,
   });
+}
+
+function verstossText(inhalt: { fehler?: string; verstoesse?: Verstoss[] }): string {
+  return inhalt.verstoesse?.map((v) => v.text).join(" ") ?? inhalt.fehler ?? "Unbekannter Fehler.";
 }
 
 function Meldungsfeld({ meldung }: { meldung: Meldung | null }): React.ReactElement | null {
@@ -88,34 +97,54 @@ function Anmeldung({ fertig }: { fertig: () => void }): React.ReactElement {
   );
 }
 
-const EINSTELLUNGSFELDER: { name: keyof Werte; titel: string; hinweis: string }[] = [
+function Kopieren({ wert, was }: { wert: string; was: string }): React.ReactElement {
+  const [gemeldet, setzeGemeldet] = useState<string | null>(null);
+  return (
+    <>
+      <button
+        className="tat still"
+        type="button"
+        onClick={() => {
+          void navigator.clipboard
+            .writeText(wert)
+            .then(() => setzeGemeldet(`${was} kopiert.`))
+            .catch(() => setzeGemeldet("Das Kopieren war nicht möglich."));
+        }}
+      >
+        Kopieren
+      </button>
+      {gemeldet !== null && <span className="hinweis">{gemeldet}</span>}
+    </>
+  );
+}
+
+export const PROXY_FELDER: { name: "name" | "kennung" | "upstreamBasis" | "aasBasis" | "zeitlimitMs"; titel: string; hinweis: string }[] = [
+  { name: "name", titel: "Name", hinweis: "Nur zur Anzeige." },
+  { name: "kennung", titel: "Kennung", hinweis: "Steht in der Adresse unter /p/. Kleinbuchstaben, Ziffern, Bindestriche." },
   { name: "upstreamBasis", titel: "Zielsystem", hinweis: "Dorthin gehen die zehn AAS-Aufrufe unverändert." },
   { name: "aasBasis", titel: "Basis der erzeugten AAS-IDs", hinweis: "Schema und Domain für /aas?itemId=…" },
-  { name: "proxyBasis", titel: "Öffentliche Basis dieses Proxys", hinweis: "Steht im servers-Block der Swagger-Seite." },
   { name: "zeitlimitMs", titel: "Zeitlimit in Millisekunden", hinweis: "Zwischen 1000 und 300000." },
 ];
 
-/**
- * Nur die Felder, ohne Laden und Speichern. Getrennt, damit sich das Formular
- * ansehen laesst, ohne dass vorher Daten eintreffen muessen.
- */
-export function EinstellungsFormular({
-  entwurf,
+export function ProxyFormular({
+  werte,
   setzen,
+  ohneKennung = false,
 }: {
-  entwurf: Werte;
-  setzen: (neu: Werte) => void;
+  werte: Record<string, string>;
+  setzen: (neu: Record<string, string>) => void;
+  ohneKennung?: boolean;
 }): React.ReactElement {
   return (
     <>
-      {EINSTELLUNGSFELDER.map(({ name, titel, hinweis }) => (
+      {PROXY_FELDER.filter((feld) => !(ohneKennung && feld.name === "kennung")).map(({ name, titel, hinweis }) => (
         <label key={name}>
           <span>
             {titel} <em>{hinweis}</em>
           </span>
           <input
-            value={entwurf[name]}
-            onChange={(e) => setzen({ ...entwurf, [name]: e.target.value })}
+            value={werte[name] ?? ""}
+            onChange={(e) => setzen({ ...werte, [name]: e.target.value })}
             spellCheck={false}
           />
         </label>
@@ -124,51 +153,45 @@ export function EinstellungsFormular({
   );
 }
 
-export function Einstellungen(): React.ReactElement {
-  const [geladen, setzeGeladen] = useState<Geladen | null>(null);
-  const [entwurf, setzeEntwurf] = useState<Werte | null>(null);
+const LEERER_PROXY: Record<string, string> = {
+  name: "",
+  kennung: "",
+  upstreamBasis: "https://rc.test.dti.neoception.dev",
+  aasBasis: "https://viewer-rc.test.dti.neoception.dev",
+  zeitlimitMs: "30000",
+};
+
+export function Uebersicht({
+  proxys,
+  gewaehlt,
+  waehlen,
+  neuLaden,
+}: {
+  proxys: ProxyAnsicht[];
+  gewaehlt: string;
+  waehlen: (kennung: string) => void;
+  neuLaden: () => Promise<void>;
+}): React.ReactElement {
+  const [neu, setzeNeu] = useState<Record<string, string>>(LEERER_PROXY);
+  const [formularOffen, setzeFormularOffen] = useState(false);
   const [meldung, setzeMeldung] = useState<Meldung | null>(null);
+  const [pruefungen, setzePruefungen] = useState<Record<string, string>>({});
   const [laeuft, setzeLaeuft] = useState(false);
-  const [pruefung, setzePruefung] = useState<string | null>(null);
 
-  const laden = useCallback(async (): Promise<void> => {
-    const antwort = await hole("/admin/api/einstellungen");
-    if (!antwort.ok) {
-      setzeMeldung({ art: "schlecht", text: "Die Einstellungen konnten nicht geladen werden." });
-      return;
-    }
-    const inhalt = (await antwort.json()) as Geladen;
-    setzeGeladen(inhalt);
-    setzeEntwurf(inhalt.werte);
-  }, []);
-
-  useEffect(() => {
-    void laden();
-  }, [laden]);
-
-  if (geladen === null || entwurf === null) {
-    return <div className="karte">Lädt …</div>;
-  }
-
-  const geaendert = (Object.keys(entwurf) as (keyof Werte)[]).some((feld) => entwurf[feld] !== geladen.werte[feld]);
-
-  async function speichern(): Promise<void> {
+  async function anlegen(): Promise<void> {
     setzeLaeuft(true);
     setzeMeldung(null);
     try {
-      const antwort = await hole("/admin/api/einstellungen", { method: "PUT", body: JSON.stringify(entwurf) });
-      const inhalt = (await antwort.json()) as Geladen & {
-        fehler?: string;
-        verstoesse?: { feld: string; text: string }[];
-      };
+      const antwort = await hole("/admin/api/proxys", { method: "POST", body: JSON.stringify(neu) });
+      const inhalt = (await antwort.json()) as { fehler?: string; verstoesse?: Verstoss[] };
       if (!antwort.ok) {
-        const texte = inhalt.verstoesse?.map((v) => v.text).join(" ") ?? inhalt.fehler ?? "Unbekannter Fehler.";
-        setzeMeldung({ art: "schlecht", text: texte });
+        setzeMeldung({ art: "schlecht", text: verstossText(inhalt) });
         return;
       }
-      setzeGeladen({ werte: inhalt.werte, proxyBasisEffektiv: inhalt.proxyBasisEffektiv });
-      setzeEntwurf(inhalt.werte);
-      setzeMeldung({ art: "gut", text: "Gespeichert." });
+      setzeNeu(LEERER_PROXY);
+      setzeFormularOffen(false);
+      setzeMeldung({ art: "gut", text: "Der Proxy ist angelegt." });
+      await neuLaden();
     } catch (fehler) {
       setzeMeldung({ art: "schlecht", text: `Der Server antwortet nicht: ${String(fehler)}` });
     } finally {
@@ -176,72 +199,245 @@ export function Einstellungen(): React.ReactElement {
     }
   }
 
-  async function verbindungPruefen(): Promise<void> {
-    setzePruefung("Fragt das Zielsystem …");
+  async function tun(pfad: string, methode: string, gutText: string): Promise<void> {
+    setzeMeldung(null);
     try {
-      const antwort = await hole("/admin/api/pruefung", { method: "POST" });
+      const antwort = await hole(pfad, { method: methode });
+      if (!antwort.ok) {
+        const inhalt = (await antwort.json()) as { fehler?: string };
+        setzeMeldung({ art: "schlecht", text: inhalt.fehler ?? "Das hat nicht geklappt." });
+        return;
+      }
+      setzeMeldung({ art: "gut", text: gutText });
+      await neuLaden();
+    } catch (fehler) {
+      setzeMeldung({ art: "schlecht", text: `Der Server antwortet nicht: ${String(fehler)}` });
+    }
+  }
+
+  async function pruefen(kennung: string): Promise<void> {
+    setzePruefungen((vorher) => ({ ...vorher, [kennung]: "Fragt das Zielsystem …" }));
+    try {
+      const antwort = await hole(`/admin/api/proxys/${kennung}/pruefung`, { method: "POST" });
       const inhalt = (await antwort.json()) as {
         erreichbar: boolean;
         status: number;
         koerper?: string;
         fehler?: string;
       };
-      setzePruefung(
-        inhalt.erreichbar
-          ? `GET ${geladen!.werte.upstreamBasis}/description antwortet ${inhalt.status}\n${inhalt.koerper ?? ""}`
+      setzePruefungen((vorher) => ({
+        ...vorher,
+        [kennung]: inhalt.erreichbar
+          ? `Antwortet ${inhalt.status}: ${inhalt.koerper ?? ""}`
           : `Nicht erreichbar: ${inhalt.fehler ?? `Status ${inhalt.status}`}`,
-      );
+      }));
     } catch (fehler) {
-      setzePruefung(`Die Prüfung selbst ist gescheitert: ${String(fehler)}`);
+      setzePruefungen((vorher) => ({ ...vorher, [kennung]: `Die Prüfung ist gescheitert: ${String(fehler)}` }));
     }
   }
 
   return (
     <>
       <div className="karte">
-        <h2>Basis-URL dieses Proxys</h2>
+        <h2>Proxys</h2>
         <p className="hinweis">
-          Diese Adresse tragen die Aufrufer anstelle der alten ein. Sie steht auch im servers-Block der Swagger-Seite.
+          Jeder Proxy reicht die zehn AAS-Aufrufe an sein eigenes Zielsystem weiter und ergänzt Discovery. Der
+          Standardproxy ist zusätzlich direkt an der Wurzel erreichbar, ohne Präfix.
         </p>
-        <div className="basis">
-          <code>{geladen.proxyBasisEffektiv}</code>
-          <button
-            className="tat still"
-            type="button"
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(geladen.proxyBasisEffektiv)
-                .then(() => setzeMeldung({ art: "gut", text: "Basis-URL kopiert." }))
-                .catch(() => setzeMeldung({ art: "schlecht", text: "Das Kopieren war nicht möglich." }));
-            }}
-          >
-            Kopieren
+        <Meldungsfeld meldung={meldung} />
+      </div>
+
+      {proxys.map((proxy) => (
+        <div className={`karte ${proxy.kennung === gewaehlt ? "gewaehlt" : ""}`} key={proxy.kennung}>
+          <h2>
+            {proxy.name}
+            {proxy.standard && <span className="schild neutral abstand-links">Standard</span>}
+            {proxy.kennung === gewaehlt && <span className="schild gut abstand-links">Gewählt</span>}
+          </h2>
+          <p className="hinweis">Zielsystem {proxy.upstreamBasis}</p>
+          <div className="basis">
+            <code>{proxy.basisUrl}</code>
+            <Kopieren wert={proxy.basisUrl} was="Die Basis-URL wurde" />
+          </div>
+          <div className="knopfreihe abstand">
+            <button className="tat" type="button" onClick={() => waehlen(proxy.kennung)} disabled={proxy.kennung === gewaehlt}>
+              Auswählen
+            </button>
+            <a className="tat still" href={`${proxy.basisPfad}/swagger/index.html`} target="_blank" rel="noreferrer">
+              Swagger öffnen
+            </a>
+            <button className="tat still" type="button" onClick={() => void pruefen(proxy.kennung)}>
+              Prüfen
+            </button>
+            {!proxy.standard && (
+              <button
+                className="tat still"
+                type="button"
+                onClick={() => void tun(`/admin/api/proxys/${proxy.kennung}/standard`, "POST", `„${proxy.name}" ist jetzt der Standard.`)}
+              >
+                Als Standard
+              </button>
+            )}
+            <button
+              className="tat still"
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Den Proxy „${proxy.name}" wirklich löschen?`)) {
+                  void tun(`/admin/api/proxys/${proxy.kennung}`, "DELETE", `„${proxy.name}" ist gelöscht.`);
+                }
+              }}
+            >
+              Löschen
+            </button>
+          </div>
+          {pruefungen[proxy.kennung] !== undefined && <pre className="abstand">{pruefungen[proxy.kennung]}</pre>}
+        </div>
+      ))}
+
+      <div className="karte">
+        {formularOffen ? (
+          <>
+            <h2>Proxy anlegen</h2>
+            <p className="hinweis">Bleibt die Kennung leer, wird sie aus dem Namen abgeleitet.</p>
+            <ProxyFormular werte={neu} setzen={setzeNeu} />
+            <div className="knopfreihe">
+              <button className="tat" type="button" onClick={() => void anlegen()} disabled={laeuft}>
+                {laeuft ? "Legt an …" : "Anlegen"}
+              </button>
+              <button className="tat still" type="button" onClick={() => setzeFormularOffen(false)}>
+                Abbrechen
+              </button>
+            </div>
+          </>
+        ) : (
+          <button className="tat" type="button" onClick={() => setzeFormularOffen(true)}>
+            Proxy anlegen
           </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+export function Einstellungen({
+  proxy,
+  neuLaden,
+}: {
+  proxy: ProxyAnsicht;
+  neuLaden: () => Promise<void>;
+}): React.ReactElement {
+  const alsWerte = useCallback(
+    (): Record<string, string> => ({
+      name: proxy.name,
+      kennung: proxy.kennung,
+      upstreamBasis: proxy.upstreamBasis,
+      aasBasis: proxy.aasBasis,
+      zeitlimitMs: String(proxy.zeitlimitMs),
+    }),
+    [proxy],
+  );
+
+  const [entwurf, setzeEntwurf] = useState<Record<string, string>>(alsWerte);
+  const [dienstBasis, setzeDienstBasis] = useState("");
+  const [dienstEntwurf, setzeDienstEntwurf] = useState("");
+  const [meldung, setzeMeldung] = useState<Meldung | null>(null);
+  const [laeuft, setzeLaeuft] = useState(false);
+
+  useEffect(() => {
+    setzeEntwurf(alsWerte());
+    setzeMeldung(null);
+  }, [alsWerte]);
+
+  useEffect(() => {
+    void (async () => {
+      const antwort = await hole("/admin/api/einstellungen");
+      if (!antwort.ok) return;
+      const inhalt = (await antwort.json()) as { werte: { proxyBasis: string }; dienstBasis: string };
+      setzeDienstBasis(inhalt.dienstBasis);
+      setzeDienstEntwurf(inhalt.werte.proxyBasis);
+    })();
+  }, []);
+
+  const geaendert = Object.keys(entwurf).some((feld) => entwurf[feld] !== alsWerte()[feld]);
+
+  async function speichern(): Promise<void> {
+    setzeLaeuft(true);
+    setzeMeldung(null);
+    try {
+      const antwort = await hole(`/admin/api/proxys/${proxy.kennung}`, {
+        method: "PUT",
+        body: JSON.stringify(entwurf),
+      });
+      const inhalt = (await antwort.json()) as { fehler?: string; verstoesse?: Verstoss[] };
+      if (!antwort.ok) {
+        setzeMeldung({ art: "schlecht", text: verstossText(inhalt) });
+        return;
+      }
+      setzeMeldung({ art: "gut", text: "Gespeichert." });
+      await neuLaden();
+    } catch (fehler) {
+      setzeMeldung({ art: "schlecht", text: `Der Server antwortet nicht: ${String(fehler)}` });
+    } finally {
+      setzeLaeuft(false);
+    }
+  }
+
+  async function dienstSpeichern(): Promise<void> {
+    setzeMeldung(null);
+    const antwort = await hole("/admin/api/einstellungen", {
+      method: "PUT",
+      body: JSON.stringify({ proxyBasis: dienstEntwurf }),
+    });
+    const inhalt = (await antwort.json()) as { fehler?: string; verstoesse?: Verstoss[]; dienstBasis?: string };
+    if (!antwort.ok) {
+      setzeMeldung({ art: "schlecht", text: verstossText(inhalt) });
+      return;
+    }
+    setzeDienstBasis(inhalt.dienstBasis ?? dienstBasis);
+    setzeMeldung({ art: "gut", text: "Gespeichert." });
+    await neuLaden();
+  }
+
+  return (
+    <>
+      <div className="karte">
+        <h2>Basis-URL von „{proxy.name}"</h2>
+        <p className="hinweis">Diese Adresse tragen die Aufrufer anstelle der alten ein.</p>
+        <div className="basis">
+          <code>{proxy.basisUrl}</code>
+          <Kopieren wert={proxy.basisUrl} was="Die Basis-URL wurde" />
         </div>
       </div>
 
       <div className="karte">
-        <h2>Einstellungen</h2>
-        <p className="hinweis">
-          Nur die öffentliche Basis darf leer bleiben, sie wird dann aus der Anfrage abgeleitet.
-        </p>
-        <EinstellungsFormular entwurf={entwurf} setzen={setzeEntwurf} />
+        <h2>Einstellungen dieses Proxys</h2>
+        <ProxyFormular werte={entwurf} setzen={setzeEntwurf} />
         <div className="knopfreihe">
           <button className="tat" type="button" onClick={() => void speichern()} disabled={laeuft || !geaendert}>
             {laeuft ? "Speichert …" : "Speichern"}
           </button>
-          <button className="tat still" type="button" onClick={() => setzeEntwurf(geladen.werte)} disabled={!geaendert}>
+          <button className="tat still" type="button" onClick={() => setzeEntwurf(alsWerte())} disabled={!geaendert}>
             Verwerfen
           </button>
-          <button className="tat still" type="button" onClick={() => void verbindungPruefen()}>
-            Verbindung prüfen
-          </button>
-          <a href="/swagger/index.html" target="_blank" rel="noreferrer">
-            Swagger-Seite öffnen
-          </a>
         </div>
         <Meldungsfeld meldung={meldung} />
-        {pruefung !== null && <pre className="abstand">{pruefung}</pre>}
+      </div>
+
+      <div className="karte">
+        <h2>Für alle Proxys</h2>
+        <p className="hinweis">
+          Die öffentliche Basis des ganzen Dienstes. Sie steht im servers-Block jeder Swagger-Seite. Bleibt sie leer,
+          wird sie aus der Anfrage abgeleitet, derzeit {dienstBasis}.
+        </p>
+        <label>
+          <span>
+            Öffentliche Basis des Dienstes <em>Leer lassen ist der Normalfall.</em>
+          </span>
+          <input value={dienstEntwurf} onChange={(e) => setzeDienstEntwurf(e.target.value)} spellCheck={false} />
+        </label>
+        <button className="tat still" type="button" onClick={() => void dienstSpeichern()}>
+          Speichern
+        </button>
       </div>
     </>
   );
@@ -399,7 +595,9 @@ function Antwortfeld({ ergebnis }: { ergebnis: Ergebnis }): React.ReactElement {
         <pre className="abstand">{ergebnis.kopfzeilen.map(([name, wert]) => `${name}: ${wert}`).join("\n")}</pre>
       )}
 
-      {ergebnis.text !== undefined && <pre className="abstand">{ergebnis.text === "" ? "(leerer Körper)" : ergebnis.text}</pre>}
+      {ergebnis.text !== undefined && (
+        <pre className="abstand">{ergebnis.text === "" ? "(leerer Körper)" : ergebnis.text}</pre>
+      )}
 
       {ergebnis.adresse !== undefined && (
         <div className="abstand">
@@ -418,7 +616,7 @@ function Antwortfeld({ ergebnis }: { ergebnis: Ergebnis }): React.ReactElement {
   );
 }
 
-export function ApiReiter(): React.ReactElement {
+export function ApiReiter({ proxy }: { proxy: ProxyAnsicht }): React.ReactElement {
   const [offen, setzeOffen] = useState<string | null>(null);
   const [autorisierung, setzeAutorisierung] = useState("");
   const [eingaben, setzeEingaben] = useState<Record<string, Eingabe>>(() => gemerkteEingaben());
@@ -450,7 +648,7 @@ export function ApiReiter(): React.ReactElement {
 
   async function absenden(aufruf: Aufruf): Promise<void> {
     const eingabe = eingaben[aufruf.id]!;
-    const url = urlBauen(aufruf, eingabe.felder, eingabe.kodieren);
+    const url = urlBauen(aufruf, eingabe.felder, eingabe.kodieren, proxy.basisPfad);
     setzeLaufend(aufruf.id);
 
     const kopfzeilen: Record<string, string> = {};
@@ -525,11 +723,11 @@ export function ApiReiter(): React.ReactElement {
   return (
     <>
       <div className="karte">
-        <h2>Alle Aufrufe dieses Proxys ausprobieren</h2>
+        <h2>Die Aufrufe von „{proxy.name}" ausprobieren</h2>
         <p className="hinweis">
-          Die Anfragen gehen an diesen Proxy, nicht an ihm vorbei. Kennungen werden im Klartext eingegeben und auf
-          Wunsch base64url kodiert, so wie die AAS-API sie erwartet. Der übliche Weg: unten Discovery aufrufen, das
-          Ergebnis kopieren und oben als aasIdentifier einsetzen.
+          Die Anfragen gehen an diesen Proxy, nicht an ihm vorbei, und zwar an {proxy.basisUrl}. Kennungen werden im
+          Klartext eingegeben und auf Wunsch base64url kodiert, so wie die AAS-API sie erwartet. Der übliche Weg: unten
+          Discovery aufrufen, das Ergebnis kopieren und oben als aasIdentifier einsetzen.
         </p>
         <label>
           <span>
@@ -551,7 +749,7 @@ export function ApiReiter(): React.ReactElement {
           <div className="aufrufliste">
             {aufrufe.map((aufruf) => {
               const eingabe = eingaben[aufruf.id]!;
-              const url = urlBauen(aufruf, eingabe.felder, eingabe.kodieren);
+              const url = urlBauen(aufruf, eingabe.felder, eingabe.kodieren, proxy.basisPfad);
               const istOffen = offen === aufruf.id;
               const hatKennung = aufruf.parameter.some((p) => p.kennung === true);
 
@@ -564,7 +762,10 @@ export function ApiReiter(): React.ReactElement {
                     onClick={() => setzeOffen(istOffen ? null : aufruf.id)}
                   >
                     <span className={`methode ${aufruf.methode.toLowerCase()}`}>{aufruf.methode}</span>
-                    <code>{aufruf.vorlage}</code>
+                    <code>
+                      {proxy.basisPfad}
+                      {aufruf.vorlage}
+                    </code>
                     <span className="pfeil">{istOffen ? "▲" : "▼"}</span>
                   </button>
 
@@ -664,24 +865,52 @@ export function ApiReiter(): React.ReactElement {
 
 export function App(): React.ReactElement | null {
   const [sitzung, setzeSitzung] = useState<"laedt" | "aus" | "an">("laedt");
-  const [reiter, setzeReiter] = useState<"einstellungen" | "api">("einstellungen");
+  const [reiter, setzeReiter] = useState<"uebersicht" | "einstellungen" | "api">("uebersicht");
+  const [proxys, setzeProxys] = useState<ProxyAnsicht[] | null>(null);
+  const [gewaehlt, setzeGewaehlt] = useState<string>("");
+
+  const laden = useCallback(async (): Promise<void> => {
+    const antwort = await hole("/admin/api/proxys");
+    if (!antwort.ok) return;
+    const inhalt = (await antwort.json()) as { proxys: ProxyAnsicht[] };
+    setzeProxys(inhalt.proxys);
+    // Die Auswahl wird abgeleitet, nicht nachgehalten: ist der gewaehlte Proxy
+    // weg, faellt sie auf den Standard zurueck.
+    setzeGewaehlt((vorher) =>
+      inhalt.proxys.some((p) => p.kennung === vorher)
+        ? vorher
+        : (inhalt.proxys.find((p) => p.standard)?.kennung ?? inhalt.proxys[0]?.kennung ?? ""),
+    );
+  }, []);
 
   const pruefen = useCallback(async (): Promise<void> => {
     try {
       const antwort = await hole("/admin/api/sitzung");
       const inhalt = (await antwort.json()) as { angemeldet: boolean };
       setzeSitzung(inhalt.angemeldet ? "an" : "aus");
+      if (inhalt.angemeldet) await laden();
     } catch {
       setzeSitzung("aus");
     }
-  }, []);
+  }, [laden]);
 
   useEffect(() => {
     void pruefen();
   }, [pruefen]);
 
   if (sitzung === "laedt") return null;
-  if (sitzung === "aus") return <Anmeldung fertig={() => setzeSitzung("an")} />;
+  if (sitzung === "aus") {
+    return (
+      <Anmeldung
+        fertig={() => {
+          setzeSitzung("an");
+          void laden();
+        }}
+      />
+    );
+  }
+
+  const aktiv = proxys?.find((p) => p.kennung === gewaehlt) ?? null;
 
   return (
     <div className="rahmen">
@@ -690,18 +919,33 @@ export function App(): React.ReactElement | null {
           <h1>DTI Proxy</h1>
           <p>Zehn AAS-Aufrufe unverändert weitergereicht, dazu Discovery nach SSP-001.</p>
         </div>
-        <button
-          className="tat still"
-          type="button"
-          onClick={() => {
-            void hole("/admin/api/abmelden", { method: "POST" }).finally(() => setzeSitzung("aus"));
-          }}
-        >
-          Abmelden
-        </button>
+        <div className="knopfreihe">
+          {proxys !== null && proxys.length > 0 && (
+            <select value={gewaehlt} onChange={(e) => setzeGewaehlt(e.target.value)} className="auswahl">
+              {proxys.map((proxy) => (
+                <option key={proxy.kennung} value={proxy.kennung}>
+                  {proxy.name}
+                  {proxy.standard ? " (Standard)" : ""}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            className="tat still"
+            type="button"
+            onClick={() => {
+              void hole("/admin/api/abmelden", { method: "POST" }).finally(() => setzeSitzung("aus"));
+            }}
+          >
+            Abmelden
+          </button>
+        </div>
       </div>
 
       <div className="reiter" role="tablist">
+        <button role="tab" aria-selected={reiter === "uebersicht"} onClick={() => setzeReiter("uebersicht")}>
+          Übersicht
+        </button>
         <button role="tab" aria-selected={reiter === "einstellungen"} onClick={() => setzeReiter("einstellungen")}>
           Einstellungen
         </button>
@@ -710,7 +954,20 @@ export function App(): React.ReactElement | null {
         </button>
       </div>
 
-      {reiter === "einstellungen" ? <Einstellungen /> : <ApiReiter />}
+      {proxys === null && <div className="karte">Lädt …</div>}
+
+      {proxys !== null && reiter === "uebersicht" && (
+        <Uebersicht
+          proxys={proxys}
+          gewaehlt={gewaehlt}
+          waehlen={(kennung) => setzeGewaehlt(kennung)}
+          neuLaden={laden}
+        />
+      )}
+      {proxys !== null && reiter === "einstellungen" && aktiv !== null && (
+        <Einstellungen proxy={aktiv} neuLaden={laden} />
+      )}
+      {proxys !== null && reiter === "api" && aktiv !== null && <ApiReiter proxy={aktiv} />}
     </div>
   );
 }

@@ -126,7 +126,7 @@ describe("Anmeldung", () => {
   });
 });
 
-describe("Einstellungen", () => {
+describe("Allgemeine Einstellungen", () => {
   it("sind ohne Anmeldung nicht lesbar", async () => {
     stand = pruefstand();
     expect((await json("/admin/api/einstellungen")).status).toBe(401);
@@ -136,10 +136,10 @@ describe("Einstellungen", () => {
     stand = pruefstand();
     const antwort = await json("/admin/api/einstellungen", {
       methode: "PUT",
-      koerper: { upstreamBasis: "https://boese.test" },
+      koerper: { proxyBasis: "https://boese.test" },
     });
     expect(antwort.status).toBe(401);
-    expect(stand.einstellungen.lesen("upstreamBasis")).toBe("https://oben.beispiel.test");
+    expect(stand.einstellungen.lesen("proxyBasis")).toBe("");
   });
 
   it("lassen sich angemeldet lesen und schreiben", async () => {
@@ -148,16 +148,15 @@ describe("Einstellungen", () => {
 
     const gelesen = await json("/admin/api/einstellungen", { cookie });
     expect(gelesen.status).toBe(200);
-    expect((gelesen.koerper.werte as Record<string, string>).upstreamBasis).toBe("https://oben.beispiel.test");
+    expect((gelesen.koerper.werte as Record<string, string>).proxyBasis).toBe("");
 
     const geschrieben = await json("/admin/api/einstellungen", {
       methode: "PUT",
       cookie,
-      koerper: { aasBasis: "https://viewer.test/", zeitlimitMs: "5000" },
+      koerper: { proxyBasis: "https://dti-proxy.test/" },
     });
     expect(geschrieben.status).toBe(200);
-    expect(stand.einstellungen.lesen("aasBasis")).toBe("https://viewer.test");
-    expect(stand.einstellungen.lesen("zeitlimitMs")).toBe("5000");
+    expect(stand.einstellungen.lesen("proxyBasis")).toBe("https://dti-proxy.test");
   });
 
   it("weisen eine kaputte Basis ab und schreiben dann gar nichts", async () => {
@@ -166,19 +165,113 @@ describe("Einstellungen", () => {
     const antwort = await json("/admin/api/einstellungen", {
       methode: "PUT",
       cookie,
-      koerper: { aasBasis: "ftp://viewer.test", zeitlimitMs: "5000" },
+      koerper: { proxyBasis: "ftp://viewer.test" },
     });
 
     expect(antwort.status).toBe(400);
-    expect(stand.einstellungen.lesen("zeitlimitMs")).toBe("30000");
-    expect(stand.einstellungen.lesen("aasBasis")).toBe("https://viewer-rc.test.dti.neoception.dev");
+    expect(stand.einstellungen.lesen("proxyBasis")).toBe("");
+  });
+});
+
+describe("Proxys über die Verwaltung", () => {
+  it("sind ohne Anmeldung nicht lesbar", async () => {
+    stand = pruefstand();
+    expect((await json("/admin/api/proxys")).status).toBe(401);
   });
 
-  it("weisen ein Zeitlimit ausserhalb der Spanne ab", async () => {
+  it("listet den Standard mit seiner Basis-URL", async () => {
     stand = pruefstand();
     const cookie = await anmelden();
-    const antwort = await json("/admin/api/einstellungen", { methode: "PUT", cookie, koerper: { zeitlimitMs: "10" } });
+    const antwort = await json("/admin/api/proxys", { cookie });
+
+    const liste = antwort.koerper.proxys as { kennung: string; standard: boolean; basisUrl: string }[];
+    expect(liste).toHaveLength(1);
+    expect(liste[0]!.kennung).toBe("standard");
+    expect(liste[0]!.standard).toBe(true);
+    expect(liste[0]!.basisUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+  });
+
+  it("legt einen zweiten an und schlaegt die Kennung aus dem Namen vor", async () => {
+    stand = pruefstand();
+    const cookie = await anmelden();
+    const antwort = await json("/admin/api/proxys", {
+      methode: "POST",
+      cookie,
+      koerper: { name: "Kunde Ä", upstreamBasis: "https://zwei.test", aasBasis: "https://viewer-zwei.test" },
+    });
+
+    expect(antwort.status).toBe(201);
+    const proxy = antwort.koerper.proxy as { kennung: string; standard: boolean; basisUrl: string };
+    expect(proxy.kennung).toBe("kunde-ae");
+    expect(proxy.standard).toBe(false);
+    expect(proxy.basisUrl).toMatch(/\/p\/kunde-ae$/);
+  });
+
+  it("weist eine kaputte Kennung ab und nennt das richtige Feld", async () => {
+    stand = pruefstand();
+    const cookie = await anmelden();
+    const antwort = await json("/admin/api/proxys", {
+      methode: "POST",
+      cookie,
+      koerper: { name: "Zwei", kennung: "Kunde A", upstreamBasis: "https://zwei.test", aasBasis: "https://v.test" },
+    });
+
     expect(antwort.status).toBe(400);
+    const verstoesse = antwort.koerper.verstoesse as { feld: string }[];
+    expect(verstoesse[0]!.feld).toBe("kennung");
+    expect(stand.proxys.anzahl()).toBe(1);
+  });
+
+  it("aendert einen Proxy", async () => {
+    stand = pruefstand();
+    const cookie = await anmelden();
+    await json("/admin/api/proxys", {
+      methode: "POST",
+      cookie,
+      koerper: { name: "Zwei", upstreamBasis: "https://zwei.test", aasBasis: "https://v.test" },
+    });
+    const antwort = await json("/admin/api/proxys/zwei", {
+      methode: "PUT",
+      cookie,
+      koerper: { upstreamBasis: "https://zwei-neu.test" },
+    });
+
+    expect(antwort.status).toBe(200);
+    expect(stand.proxys.nachKennung("zwei")!.upstreamBasis).toBe("https://zwei-neu.test");
+    // Nicht genannte Felder bleiben stehen.
+    expect(stand.proxys.nachKennung("zwei")!.name).toBe("Zwei");
+  });
+
+  it("setzt den Standard um", async () => {
+    stand = pruefstand();
+    const cookie = await anmelden();
+    await json("/admin/api/proxys", {
+      methode: "POST",
+      cookie,
+      koerper: { name: "Zwei", upstreamBasis: "https://zwei.test", aasBasis: "https://v.test" },
+    });
+    const antwort = await json("/admin/api/proxys/zwei/standard", { methode: "POST", cookie });
+
+    expect(antwort.status).toBe(200);
+    expect(stand.proxys.standard()!.kennung).toBe("zwei");
+    expect(stand.proxys.nachKennung("standard")!.standard).toBe(false);
+  });
+
+  it("loescht einen Proxy, aber nicht den letzten", async () => {
+    stand = pruefstand();
+    const cookie = await anmelden();
+    await json("/admin/api/proxys", {
+      methode: "POST",
+      cookie,
+      koerper: { name: "Zwei", upstreamBasis: "https://zwei.test", aasBasis: "https://v.test" },
+    });
+
+    expect((await json("/admin/api/proxys/zwei", { methode: "DELETE", cookie })).status).toBe(200);
+    expect(stand.proxys.anzahl()).toBe(1);
+
+    const letzter = await json("/admin/api/proxys/standard", { methode: "DELETE", cookie });
+    expect(letzter.status).toBe(400);
+    expect(stand.proxys.anzahl()).toBe(1);
   });
 });
 
@@ -190,7 +283,7 @@ describe("Verbindungspruefung", () => {
         : new Response("{}", { status: 404 }),
     );
     const cookie = await anmelden();
-    const antwort = await json("/admin/api/pruefung", { methode: "POST", cookie });
+    const antwort = await json("/admin/api/proxys/standard/pruefung", { methode: "POST", cookie });
 
     expect(antwort.koerper.erreichbar).toBe(true);
     expect(antwort.koerper.koerper).toBe('{"profiles":[10,12,16]}');
@@ -201,7 +294,7 @@ describe("Verbindungspruefung", () => {
       throw new Error("ECONNREFUSED");
     });
     const cookie = await anmelden();
-    const antwort = await json("/admin/api/pruefung", { methode: "POST", cookie });
+    const antwort = await json("/admin/api/proxys/standard/pruefung", { methode: "POST", cookie });
 
     expect(antwort.status).toBe(200);
     expect(antwort.koerper.erreichbar).toBe(false);

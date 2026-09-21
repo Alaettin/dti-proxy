@@ -1,9 +1,10 @@
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import type { Einstellungen } from "../einstellungen.js";
+import { zustaendigFuer } from "../aufloesung.js";
 import { ergebnis, type Uhr, echteUhr } from "../fehler.js";
 import { AAS_MUSTER } from "../pfade.js";
+import type { Proxys } from "../proxys.js";
 
 /**
  * Kopfzeilen, die zur einzelnen Verbindung gehoeren und deshalb nicht weiter
@@ -52,7 +53,7 @@ function antwortKopfzeilenSetzen(antwort: Response, oben: globalThis.Response): 
 }
 
 export interface WeiterleitungOptionen {
-  einstellungen: Einstellungen;
+  proxys: Proxys;
   holen?: typeof fetch;
   uhr?: Uhr;
 }
@@ -65,10 +66,12 @@ export interface WeiterleitungOptionen {
  * idShortPath dekodieren und beim Zusammensetzen anders wieder kodieren. Das
  * waere genau die Veraenderung, die dieses Projekt ausschliesst.
  */
-export function weiterleitung({ einstellungen, holen = fetch, uhr = echteUhr }: WeiterleitungOptionen): RequestHandler {
+export function weiterleitung({ proxys, holen = fetch, uhr = echteUhr }: WeiterleitungOptionen): RequestHandler {
   return async function weiterleiten(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const roh = req.originalUrl;
-    if (!AAS_MUSTER.some((muster) => muster.test(roh))) return next();
+    const zustaendig = zustaendigFuer(req.originalUrl, proxys);
+    if (zustaendig === null) return next();
+    const { proxy, rest } = zustaendig;
+    if (!AAS_MUSTER.some((muster) => muster.test(rest))) return next();
 
     if (req.method !== "GET" && req.method !== "HEAD") {
       res.setHeader("Allow", "GET, HEAD");
@@ -76,8 +79,8 @@ export function weiterleitung({ einstellungen, holen = fetch, uhr = echteUhr }: 
       return;
     }
 
-    const ziel = einstellungen.lesen("upstreamBasis") + roh;
-    const zeitlimit = einstellungen.zeitlimit();
+    const ziel = proxy.upstreamBasis + rest;
+    const zeitlimit = proxy.zeitlimitMs;
     const abbruch = new AbortController();
     const wecker = setTimeout(() => abbruch.abort(), zeitlimit);
 

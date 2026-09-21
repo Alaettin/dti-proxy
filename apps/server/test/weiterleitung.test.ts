@@ -83,7 +83,7 @@ describe("Weiterleitung", () => {
       await new Promise((warten) => setTimeout(warten, 1500));
       return new Response("{}");
     });
-    stand.einstellungen.schreiben({ zeitlimitMs: "1000" });
+    stand.proxys.aendern("standard", { zeitlimitMs: "1000" });
     const antwort = await roheAnfrage(stand.app, "/description");
 
     expect(antwort.status).toBe(502);

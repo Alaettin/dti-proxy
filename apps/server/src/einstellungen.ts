@@ -1,14 +1,12 @@
 import type { Datenbank } from "./db.js";
 
+/**
+ * Was fuer den ganzen Dienst gilt. Alles, was je Proxy verschieden ist, steht
+ * in der Tabelle `proxys`.
+ */
 export const VORGABEN = {
-  /** Basis der alten Funktionen, also das Zielsystem der Weiterleitung. */
-  upstreamBasis: "https://rc.test.dti.neoception.dev",
-  /** Oeffentliche Basis dieses Proxys. Leer bedeutet: aus der Anfrage ableiten. */
+  /** Oeffentliche Basis des Dienstes. Leer bedeutet: aus der Anfrage ableiten. */
   proxyBasis: "",
-  /** Schema und Domain fuer die gebauten AAS-IDs, der Punkt "Sonstiges". */
-  aasBasis: "https://viewer-rc.test.dti.neoception.dev",
-  /** Zeitlimit der Weiterleitung in Millisekunden. */
-  zeitlimitMs: "30000",
 } as const;
 
 export type Schluessel = keyof typeof VORGABEN;
@@ -17,12 +15,13 @@ export type Werte = Record<Schluessel, string>;
 /**
  * Was im Formular ueber dem Feld steht. Eine Meldung, die den technischen
  * Schluessel nennt, laesst den Lesenden raten, welches Feld gemeint ist.
+ * Die beiden Basen je Proxy stehen hier mit, weil `basisPruefen` auch fuer sie
+ * zustaendig ist.
  */
-export const BEZEICHNUNG: Record<Schluessel, string> = {
+export const BEZEICHNUNG: Record<Schluessel | "upstreamBasis" | "aasBasis", string> = {
+  proxyBasis: "Die öffentliche Basis des Dienstes",
   upstreamBasis: "Das Zielsystem",
-  proxyBasis: "Die öffentliche Basis dieses Proxys",
   aasBasis: "Die Basis der erzeugten AAS-IDs",
-  zeitlimitMs: "Das Zeitlimit",
 };
 
 export interface Pruefverstoss {
@@ -37,7 +36,10 @@ const SCHLUESSEL = Object.keys(VORGABEN) as Schluessel[];
  * bewusst nicht gesperrt: das Feld liegt hinter dem Login, und ein Ziel auf
  * 127.0.0.1 ist beim lokalen Testen der Normalfall.
  */
-export function basisPruefen(feld: Schluessel, roh: string): { wert: string } | { text: string } {
+export function basisPruefen(
+  feld: keyof typeof BEZEICHNUNG,
+  roh: string,
+): { wert: string } | { text: string } {
   const name = BEZEICHNUNG[feld];
   const wert = roh.trim();
   if (wert === "") return { text: `${name} darf nicht leer sein.` };
@@ -57,14 +59,6 @@ export function basisPruefen(feld: Schluessel, roh: string): { wert: string } | 
   // Pfad ein doppeltes // ergeben, und das waere bereits eine Veraenderung.
   const ohneSchraegstrich = (url.origin + url.pathname).replace(/\/+$/, "");
   return { wert: ohneSchraegstrich };
-}
-
-function zeitlimitPruefen(roh: string): { wert: string } | { text: string } {
-  const zahl = Number(roh);
-  if (!Number.isInteger(zahl) || zahl < 1000 || zahl > 300_000) {
-    return { text: `${BEZEICHNUNG.zeitlimitMs} muss eine ganze Zahl zwischen 1000 und 300000 sein.` };
-  }
-  return { wert: String(zahl) };
 }
 
 export class Einstellungen {
@@ -94,10 +88,6 @@ export class Einstellungen {
     return zeile?.wert ?? VORGABEN[schluessel];
   }
 
-  zeitlimit(): number {
-    return Number(this.lesen("zeitlimitMs"));
-  }
-
   /** Prueft und schreibt. Bei Verstoessen wird nichts geschrieben. */
   schreiben(eingabe: Partial<Record<Schluessel, string>>): Pruefverstoss[] {
     const verstoesse: Pruefverstoss[] = [];
@@ -106,12 +96,6 @@ export class Einstellungen {
     for (const [feld, roh] of Object.entries(eingabe) as [Schluessel, string][]) {
       if (!SCHLUESSEL.includes(feld)) {
         verstoesse.push({ feld, text: `„${feld}" ist keine bekannte Einstellung.` });
-        continue;
-      }
-      if (feld === "zeitlimitMs") {
-        const geprueft = zeitlimitPruefen(roh);
-        if ("text" in geprueft) verstoesse.push({ feld, text: geprueft.text });
-        else sauber[feld] = geprueft.wert;
         continue;
       }
       if (feld === "proxyBasis" && roh.trim() === "") {

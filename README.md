@@ -1,17 +1,36 @@
 # DTI Proxy
 
-Ein vorgeschalteter Proxy vor einer DTI-Instanz. Die zehn lesenden AAS-Endpunkte sind unter
+Vorgeschaltete Proxys vor DTI-Instanzen. Je Proxy sind die zehn lesenden AAS-Endpunkte unter
 einer neuen Basis-URL **unverändert** erreichbar, und dazu kommt die Discovery-Operation
 `POST /lookup/shellsByAssetLink`, die das Zielsystem nicht hat.
 
-## Was der Proxy anbietet
+Ein Dienst trägt beliebig viele Proxys, verwaltet über die Übersicht unter `/admin`. Ein Login
+für alle.
+
+## Mehrere Proxys
+
+Jeder Proxy hat eine Kennung und liegt unter `/p/<kennung>`. Genau einer ist als **Standard**
+markiert und zusätzlich direkt an der Wurzel erreichbar.
+
+```
+https://proxy.example/shells/<id>              Standard
+https://proxy.example/p/kunde-a/shells/<id>    ein zweiter Proxy
+https://proxy.example/p/kunde-a/swagger        dessen eigene Swagger-Seite
+```
+
+## Was ein Proxy anbietet
 
 | Weg | Herkunft |
 |---|---|
 | `GET /shells/{aasIdentifier}` und die neun weiteren AAS-Pfade | 1:1 vom Zielsystem |
 | `POST /lookup/shellsByAssetLink` | neu, Discovery Service Specification V3.1, Profil SSP-001 |
 | `GET /swagger/index.html` | Swagger-Seite mit beidem, Discovery als eigener Abschnitt |
-| `GET /admin` | Verwaltung: Anmeldung, Einstellungen, Discovery-Test |
+
+Dazu für den ganzen Dienst:
+
+| Weg | Zweck |
+|---|---|
+| `GET /admin` | Verwaltung: Übersicht, Einstellungen, API-Prüfstand |
 | `GET /gesundheit` | Statusprobe |
 
 Alles andere beantwortet der Proxy selbst mit 404. Die Connector-API und die Weboberfläche des
@@ -40,27 +59,40 @@ Der Aufruf rechnet nur, er fragt das Zielsystem nicht. Bedient wird ausschließl
 ```bash
 curl -X POST 'http://localhost:3000/lookup/shellsByAssetLink?limit=10' \
   -H 'content-type: application/json' \
-  -d '[{"name":"globalAssetId","value":"https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291"}]'
+  -d '[{"name":"globalAssetId","value":"https://viewer-rc.test.dti.neoception.dev/VNDP77EV202504291"}]'
 ```
 
 ## Durchreichen heißt wirklich durchreichen
 
-Gearbeitet wird mit der rohen Anfragezeile, nicht mit zerlegten Routenparametern. base64url-IDs
-mit `-` und `_` und ein `%2F` im `idShortPath` erreichen das Zielsystem Zeichen für Zeichen so,
-wie sie hereinkamen. `Authorization` wird weitergereicht, nur die Hop-by-Hop-Kopfzeilen fallen
-weg. Statuscode, Kopfzeilen und Körper kommen unverändert zurück, einer Weiterleitung folgt der
-Proxy nicht.
+Gearbeitet wird mit der rohen Anfragezeile, nicht mit zerlegten Routenparametern. Auch das
+Präfix `/p/<kennung>` wird nur abgeschnitten, nie zerlegt und neu zusammengesetzt.
+base64url-IDs mit `-` und `_` und ein `%2F` im `idShortPath` erreichen das Zielsystem Zeichen
+für Zeichen so, wie sie hereinkamen. `Authorization` wird weitergereicht, nur die
+Hop-by-Hop-Kopfzeilen fallen weg. Statuscode, Kopfzeilen und Körper kommen unverändert zurück,
+einer Weiterleitung folgt der Proxy nicht.
 
 ## Einstellungen
 
 Verwaltet unter `/admin`, gespeichert in SQLite unter `DATA_DIR`.
 
-| Schlüssel | Vorgabe | Bedeutung |
+Je Proxy:
+
+| Feld | Vorgabe beim ersten Proxy | Bedeutung |
 |---|---|---|
+| `name` | `Standard` | nur zur Anzeige |
+| `kennung` | `standard` | steht in der Adresse unter `/p/`, Kleinbuchstaben, Ziffern, Bindestriche |
 | `upstreamBasis` | `https://rc.test.dti.neoception.dev` | Ziel der zehn AAS-Aufrufe |
 | `aasBasis` | `https://viewer-rc.test.dti.neoception.dev` | Schema und Domain der gebauten AAS-IDs |
-| `proxyBasis` | leer | öffentliche Basis, leer heißt aus der Anfrage ableiten |
 | `zeitlimitMs` | `30000` | Zeitlimit der Weiterleitung, 1000 bis 300000 |
+
+Für den ganzen Dienst:
+
+| Schlüssel | Vorgabe | Bedeutung |
+|---|---|---|
+| `proxyBasis` | leer | öffentliche Basis, leer heißt aus der Anfrage ableiten |
+
+Eine bestehende Installation mit nur einer Einstellungsreihe wandert beim Start von selbst in
+einen Proxy „Standard" mit genau diesen Werten.
 
 ## Umgebung
 

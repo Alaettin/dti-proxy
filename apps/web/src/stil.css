@@ -251,6 +251,21 @@ pre {
   margin-top: 14px;
 }
 
+.abstand-links {
+  margin-left: 10px;
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+.karte.gewaehlt {
+  border-color: var(--akzent);
+}
+
+select.auswahl {
+  width: auto;
+  min-width: 170px;
+}
+
 /* Aufklappliste der Aufrufe */
 
 .aufrufliste {

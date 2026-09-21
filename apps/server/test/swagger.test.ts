@@ -88,6 +88,7 @@ describe("GET /swagger/aas/swagger.json", () => {
   it("nutzt die eingestellte Proxy-Basis, wenn eine gesetzt ist", async () => {
     stand = pruefstand(() => new Response(JSON.stringify(vorlage)));
     stand.einstellungen.schreiben({ proxyBasis: "https://dti-proxy.beispiel.test/" });
+    // Der Standard liegt an der Wurzel, also ohne Praefix.
     const antwort = await roheAnfrage(stand.app, "/swagger/aas/swagger.json");
 
     expect((JSON.parse(antwort.koerper) as OpenApiDokument).servers).toEqual([
@@ -105,9 +106,9 @@ describe("Swagger-Oberflaeche", () => {
     expect(antwort.koerper).toContain('url: "/swagger/aas/swagger.json"');
   });
 
-  it("liefert die Dateien von swagger-ui-dist mit aus", async () => {
+  it("liefert die Dateien von swagger-ui-dist einmal fuer alle Proxys aus", async () => {
     stand = pruefstand();
-    const antwort = await roheAnfrage(stand.app, "/swagger/swagger-ui.css");
+    const antwort = await roheAnfrage(stand.app, "/swagger-ui/swagger-ui.css");
 
     expect(antwort.status).toBe(200);
     expect(antwort.kopfzeilen["content-type"]).toContain("text/css");

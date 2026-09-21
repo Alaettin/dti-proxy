@@ -10,17 +10,32 @@ Ergänzen oder Entfernen von Kopfzeilen außer den Hop-by-Hop-Feldern, kein eige
 außer 502 bei Ausfall und 405 bei falscher Methode. Wer hier etwas "verbessern" will, bricht den
 Zweck des Projekts.
 
-Konkret: `src/routen/weiterleitung.ts` arbeitet mit `req.originalUrl`. Niemals auf `req.path`,
-`req.params` oder eine Express-Parameterroute umstellen, das dekodiert base64url-IDs und ein
-`%2F` im `idShortPath`. Der Test "reicht den rohen Pfad zeichengenau nach oben" bewacht das.
+Konkret: `src/routen/weiterleitung.ts` und `src/aufloesung.ts` arbeiten mit `req.originalUrl`
+und schneiden das Präfix per `slice` ab. Niemals auf `req.path`, `req.params` oder eine
+Express-Parameterroute umstellen, das dekodiert base64url-IDs und ein `%2F` im `idShortPath`.
+Die Tests "reicht den rohen Pfad zeichengenau nach oben" und "schneidet den Rest hinter
+/p/<kennung> zeichengenau ab" bewachen das.
+
+## Mehrere Proxys
+
+Ein Dienst trägt mehrere Proxys, Tabelle `proxys`. Jeder liegt unter `/p/<kennung>`, genau einer
+ist Standard und zusätzlich an der Wurzel erreichbar. Der Standard wird von einem partiellen
+eindeutigen Index erzwungen, nicht nur vom Code.
+
+`upstreamBasis`, `aasBasis` und `zeitlimitMs` gehören je Proxy in die Tabelle. In
+`einstellungen` steht nur noch `proxyBasis`, die öffentliche Basis des Dienstes.
 
 ## Aufbau
 
 * `apps/server/src/pfade.ts` die Freigabeliste der zehn Pfade, bewacht von einem Abgleichtest
   gegen `spec/aas.swagger.json`
+* `apps/server/src/aufloesung.ts` welcher Proxy zuständig ist und was vom Pfad übrig bleibt
+* `apps/server/src/proxys.ts` Anlegen, Ändern, Löschen, Standard
+* `apps/server/src/db.ts` Tabellen und die Wanderung vom alten Ein-Proxy-Stand
 * `apps/server/src/routen/weiterleitung.ts` das Durchreichen
 * `apps/server/src/routen/discovery.ts` die neue Operation, rechnet nur, fragt nie oben
-* `apps/server/src/openapi.ts` holt die Spec von oben und hängt Discovery an
+* `apps/server/src/openapi.ts` holt die Spec von oben und hängt Discovery an, je Zielsystem
+* `apps/web/src/aufrufe.ts` der Katalog der elf Aufrufe und der Adressbau, getrennt geprüft
 * `apps/web` React-Oberfläche unter `/admin`
 
 ## Beim Arbeiten

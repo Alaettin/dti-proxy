@@ -5,14 +5,15 @@ import type { Einstellungen } from "./einstellungen.js";
 import { ergebnis, type Uhr, echteUhr } from "./fehler.js";
 import { konfiguration } from "./konfiguration.js";
 import { SpecQuelle } from "./openapi.js";
-import { DISCOVERY_PFAD } from "./pfade.js";
-import { discoveryRouter } from "./routen/discovery.js";
+import type { Proxys } from "./proxys.js";
+import { discovery, istDiscovery } from "./routen/discovery.js";
 import { swaggerRouter } from "./routen/swagger.js";
 import { verwaltungRouter } from "./routen/verwaltung.js";
 import { weiterleitung } from "./routen/weiterleitung.js";
 
 export interface AppOptionen {
   einstellungen: Einstellungen;
+  proxys: Proxys;
   holen?: typeof fetch;
   uhr?: Uhr;
   benutzer?: string;
@@ -25,6 +26,7 @@ export interface AppOptionen {
 
 export function appAnlegen({
   einstellungen,
+  proxys,
   holen = fetch,
   uhr = echteUhr,
   benutzer = konfiguration.adminBenutzer,
@@ -40,7 +42,7 @@ export function appAnlegen({
   // Hinter Caddy oder Sliplane steht das echte Schema in X-Forwarded-Proto.
   app.set("trust proxy", true);
 
-  const quelle = new SpecQuelle(einstellungen, holen);
+  const quelle = new SpecQuelle(holen);
 
   app.get("/gesundheit", (_req, res) => {
     res.json({ status: "ok" });
@@ -48,17 +50,22 @@ export function appAnlegen({
 
   // Ganz vorn und vor jedem Body-Parser: die Weiterleitung soll die Anfrage
   // sehen, wie sie hereinkam.
-  app.use(weiterleitung({ einstellungen, holen, uhr }));
+  app.use(weiterleitung({ proxys, holen, uhr }));
 
-  app.use(DISCOVERY_PFAD, express.json({ limit: "1mb", type: () => true }));
-  app.use(discoveryRouter({ einstellungen, uhr }));
+  // Der Body-Parser laeuft nur auf dem Discovery-Weg. Alles andere bleibt roh.
+  const koerperLesen = express.json({ limit: "1mb", type: () => true });
+  app.use((req, res, next) => {
+    if (req.method === "POST" && istDiscovery(req.originalUrl, proxys)) return koerperLesen(req, res, next);
+    next();
+  });
+  app.use(discovery({ proxys, uhr }));
 
-  app.use(swaggerRouter(einstellungen, quelle));
+  app.use(swaggerRouter(einstellungen, proxys, quelle));
 
   app.use(
     "/admin/api",
     express.json({ limit: "64kb" }),
-    verwaltungRouter({ einstellungen, quelle, holen, benutzer, passwort, geheimnis, sicher }),
+    verwaltungRouter({ einstellungen, proxys, holen, benutzer, passwort, geheimnis, sicher }),
   );
 
   if (webVerzeichnis !== null && fs.existsSync(webVerzeichnis)) {
@@ -72,7 +79,7 @@ export function appAnlegen({
   }
 
   app.get("/", (_req, res) => {
-    res.redirect(302, "/swagger/index.html");
+    res.redirect(302, "/admin/");
   });
 
   // Kaputtes JSON darf nicht als HTML-Fehlerseite zurueckkommen.

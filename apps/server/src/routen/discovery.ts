@@ -1,8 +1,9 @@
 import { Ajv, type ErrorObject } from "ajv";
-import { Router, type Request, type Response } from "express";
-import type { Einstellungen } from "../einstellungen.js";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import { zustaendigFuer } from "../aufloesung.js";
 import { ergebnisAus, type Uhr, echteUhr } from "../fehler.js";
 import { DISCOVERY_PFAD } from "../pfade.js";
+import type { Proxys } from "../proxys.js";
 
 /** Der einzige Bezeichnername, den dieser Dienst bedient. */
 export const GLOBAL_ASSET_ID = "globalAssetId";
@@ -129,14 +130,30 @@ function grenzeAus(limit: unknown): number | null | "fehler" {
 }
 
 export interface DiscoveryOptionen {
-  einstellungen: Einstellungen;
+  proxys: Proxys;
   uhr?: Uhr;
 }
 
-export function discoveryRouter({ einstellungen, uhr = echteUhr }: DiscoveryOptionen): Router {
-  const router = Router();
+/** Trifft die Anfrage den Discovery-Weg eines Proxys? */
+export function istDiscovery(roheZeile: string, proxys: Proxys): boolean {
+  const zustaendig = zustaendigFuer(roheZeile, proxys);
+  if (zustaendig === null) return false;
+  const ohneQuery = zustaendig.rest.split("?")[0] ?? "";
+  return ohneQuery === DISCOVERY_PFAD;
+}
 
-  router.post(DISCOVERY_PFAD, (req: Request, res: Response) => {
+export function discovery({ proxys, uhr = echteUhr }: DiscoveryOptionen): RequestHandler {
+  return function discoveryBedienen(req: Request, res: Response, next: NextFunction): void {
+    const zustaendig = zustaendigFuer(req.originalUrl, proxys);
+    if (zustaendig === null) return next();
+    const ohneQuery = zustaendig.rest.split("?")[0] ?? "";
+    if (ohneQuery !== DISCOVERY_PFAD) return next();
+    if (req.method !== "POST") {
+      res.setHeader("Allow", "POST");
+      res.status(405).json(ergebnisAus("405", [`Method ${req.method} is not allowed on this path.`], "Error", uhr));
+      return;
+    }
+
     const grenze = grenzeAus(req.query.limit);
     if (grenze === "fehler") {
       res.status(400).json(ergebnisAus("400", ["Query parameter 'limit' must be an integer of at least 1."], "Error", uhr));
@@ -155,7 +172,7 @@ export function discoveryRouter({ einstellungen, uhr = echteUhr }: DiscoveryOpti
     }
 
     const bezeichner = req.body as { name: string; value: string }[];
-    const aasBasis = einstellungen.lesen("aasBasis");
+    const aasBasis = zustaendig.proxy.aasBasis;
 
     const gefunden: string[] = [];
     for (const eintrag of bezeichner) {
@@ -174,7 +191,5 @@ export function discoveryRouter({ einstellungen, uhr = echteUhr }: DiscoveryOpti
       paging_metadata: weitere ? { cursor: cursorAus(ende) } : {},
       result: seite,
     });
-  });
-
-  return router;
+  };
 }

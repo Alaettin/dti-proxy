@@ -105,7 +105,7 @@ describe("POST /lookup/shellsByAssetLink", () => {
 
   it("nutzt die Basis aus den Einstellungen", async () => {
     stand = pruefstand();
-    stand.einstellungen.schreiben({ aasBasis: "https://anders.test/unterpfad" });
+    stand.proxys.aendern("standard", { aasBasis: "https://anders.test/unterpfad" });
     const antwort = await lookup("", [{ name: "globalAssetId", value: "https://egal.test/4711" }]);
 
     expect(antwort.koerper.result).toEqual(["https://anders.test/unterpfad/aas?itemId=4711"]);

@@ -1,16 +1,24 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
+import { basisUrl } from "../aufloesung.js";
 import type { Einstellungen, Schluessel } from "../einstellungen.js";
 import { VORGABEN } from "../einstellungen.js";
-import type { SpecQuelle } from "../openapi.js";
+import type { Proxy, Proxys } from "../proxys.js";
+import { kennungAus } from "../proxys.js";
 import { gleich, sitzungLoeschen, sitzungPruefen, sitzungSetzen } from "../sitzung.js";
-import { proxyBasisAus } from "./swagger.js";
+import { dienstBasisAus } from "./swagger.js";
 
 const VERSUCHE_MAX = 5;
 const SPERRE_MS = 15 * 60 * 1000;
 
+/** Express 5 tippt einen Wegparameter als string oder string[]. */
+function wegKennung(req: Request): string {
+  const roh = req.params.kennung;
+  return Array.isArray(roh) ? (roh[0] ?? "") : (roh ?? "");
+}
+
 export interface VerwaltungOptionen {
   einstellungen: Einstellungen;
-  quelle: SpecQuelle;
+  proxys: Proxys;
   holen?: typeof fetch;
   benutzer: string;
   passwort: string;
@@ -26,7 +34,7 @@ export interface VerwaltungOptionen {
 
 export function verwaltungRouter({
   einstellungen,
-  quelle,
+  proxys,
   holen = fetch,
   benutzer,
   passwort,
@@ -42,6 +50,15 @@ export function verwaltungRouter({
       return;
     }
     next();
+  }
+
+  /** Was die Oberflaeche je Proxy braucht, inklusive der fertigen Basis-URL. */
+  function anzeigen(req: Request, proxy: Proxy): Proxy & { basisUrl: string; basisPfad: string } {
+    return {
+      ...proxy,
+      basisUrl: basisUrl(dienstBasisAus(req, einstellungen), proxy),
+      basisPfad: proxy.standard ? "" : `/p/${proxy.kennung}`,
+    };
   }
 
   router.post("/anmelden", (req, res) => {
@@ -82,8 +99,14 @@ export function verwaltungRouter({
     res.json({ angemeldet: angemeldeter !== null, benutzer: angemeldeter });
   });
 
+  // Allgemeines, also das, was fuer alle Proxys zugleich gilt.
+
   router.get("/einstellungen", schutz, (req, res) => {
-    res.json({ werte: einstellungen.alle(), vorgaben: VORGABEN, proxyBasisEffektiv: proxyBasisAus(req, einstellungen) });
+    res.json({
+      werte: einstellungen.alle(),
+      vorgaben: VORGABEN,
+      dienstBasis: dienstBasisAus(req, einstellungen),
+    });
   });
 
   router.put("/einstellungen", schutz, (req, res) => {
@@ -97,27 +120,75 @@ export function verwaltungRouter({
       res.status(400).json({ fehler: "Die Eingabe ist nicht gültig.", verstoesse });
       return;
     }
-    res.json({ werte: einstellungen.alle(), proxyBasisEffektiv: proxyBasisAus(req, einstellungen) });
+    res.json({ werte: einstellungen.alle(), dienstBasis: dienstBasisAus(req, einstellungen) });
   });
 
-  /** Fragt /description beim Zielsystem ab und zeigt, was zurueckkommt. */
-  router.post("/pruefung", schutz, async (_req, res) => {
-    const basis = einstellungen.lesen("upstreamBasis");
+  // Die Proxys selbst.
+
+  router.get("/proxys", schutz, (req, res) => {
+    res.json({ proxys: proxys.alle().map((proxy) => anzeigen(req, proxy)) });
+  });
+
+  router.post("/proxys", schutz, (req, res) => {
+    const eingabe = (req.body ?? {}) as { name?: string; kennung?: string };
+    // Ohne eigene Kennung eine aus dem Namen ableiten, das ist der Normalfall.
+    const gegeben = typeof eingabe.kennung === "string" ? eingabe.kennung.trim() : "";
+    const kennung = gegeben !== "" ? gegeben : kennungAus(eingabe.name ?? "");
+    const ergebnis = proxys.anlegen({ ...eingabe, kennung });
+    if ("verstoesse" in ergebnis) {
+      res.status(400).json({ fehler: "Die Eingabe ist nicht gültig.", verstoesse: ergebnis.verstoesse });
+      return;
+    }
+    res.status(201).json({ proxy: anzeigen(req, ergebnis.proxy) });
+  });
+
+  router.put("/proxys/:kennung", schutz, (req, res) => {
+    const ergebnis = proxys.aendern(wegKennung(req), (req.body ?? {}) as Record<string, string>);
+    if (ergebnis === null) {
+      res.status(404).json({ fehler: "Diesen Proxy gibt es nicht." });
+      return;
+    }
+    if ("verstoesse" in ergebnis) {
+      res.status(400).json({ fehler: "Die Eingabe ist nicht gültig.", verstoesse: ergebnis.verstoesse });
+      return;
+    }
+    res.json({ proxy: anzeigen(req, ergebnis.proxy) });
+  });
+
+  router.delete("/proxys/:kennung", schutz, (req, res) => {
+    const fehler = proxys.loeschen(wegKennung(req));
+    if (fehler !== null) {
+      res.status(400).json(fehler);
+      return;
+    }
+    res.json({ proxys: proxys.alle().map((proxy) => anzeigen(req, proxy)) });
+  });
+
+  router.post("/proxys/:kennung/standard", schutz, (req, res) => {
+    const fehler = proxys.standardSetzen(wegKennung(req));
+    if (fehler !== null) {
+      res.status(400).json(fehler);
+      return;
+    }
+    res.json({ proxys: proxys.alle().map((proxy) => anzeigen(req, proxy)) });
+  });
+
+  /** Fragt /description beim Zielsystem eines Proxys ab und zeigt, was zurueckkommt. */
+  router.post("/proxys/:kennung/pruefung", schutz, async (req, res) => {
+    const proxy = proxys.nachKennung(wegKennung(req));
+    if (proxy === null) {
+      res.status(404).json({ fehler: "Diesen Proxy gibt es nicht." });
+      return;
+    }
     try {
-      const antwort = await holen(`${basis}/description`, {
-        signal: AbortSignal.timeout(einstellungen.zeitlimit()),
+      const antwort = await holen(`${proxy.upstreamBasis}/description`, {
+        signal: AbortSignal.timeout(proxy.zeitlimitMs),
       });
       const text = await antwort.text();
       res.json({ erreichbar: antwort.ok, status: antwort.status, koerper: text.slice(0, 2000) });
     } catch (fehler) {
       res.json({ erreichbar: false, status: 0, fehler: fehler instanceof Error ? fehler.message : String(fehler) });
     }
-  });
-
-  /** Sagt, ob die Swagger-Spec gerade von oben oder aus der Kopie kommt. */
-  router.get("/spec-herkunft", schutz, async (req, res) => {
-    const { quelle: herkunft, dokument } = await quelle.dokument(proxyBasisAus(req, einstellungen));
-    res.json({ herkunft, pfade: Object.keys(dokument.paths).length });
   });
 
   return router;

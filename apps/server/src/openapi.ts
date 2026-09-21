@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Einstellungen } from "./einstellungen.js";
 import { DISCOVERY_PFAD } from "./pfade.js";
 import { DISCOVERY_FASSUNG, DISCOVERY_PROFIL } from "./routen/discovery.js";
 
@@ -55,7 +54,9 @@ function discoveryPfad(): Record<string, unknown> {
         content: {
           "application/json": {
             schema: { type: "array", minItems: 1, items: { $ref: "#/components/schemas/AssetLink" } },
-            example: [{ name: "globalAssetId", value: "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291" }],
+            example: [
+              { name: "globalAssetId", value: "https://viewer-rc.test.dti.neoception.dev/VNDP77EV202504291" },
+            ],
           },
         },
       },
@@ -87,7 +88,12 @@ const DISCOVERY_SCHEMAS: Record<string, unknown> = {
     required: ["name", "value"],
     properties: {
       name: { type: "string", minLength: 1, maxLength: 64, example: "globalAssetId" },
-      value: { type: "string", minLength: 1, maxLength: 2048, example: "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291" },
+      value: {
+        type: "string",
+        minLength: 1,
+        maxLength: 2048,
+        example: "https://viewer-rc.test.dti.neoception.dev/VNDP77EV202504291",
+      },
     },
   },
   PagingMetadata: {
@@ -139,40 +145,46 @@ export function zusammenfuehren(oben: OpenApiDokument, proxyBasis: string): Open
 const CACHE_DAUER_MS = 5 * 60 * 1000;
 
 export class SpecQuelle {
-  #einstellungen: Einstellungen;
   #holen: typeof fetch;
-  #zwischenstand: { dokument: OpenApiDokument; bis: number; basis: string } | undefined;
+  /** Je Zielsystem ein Zwischenstand, sonst nimmt ein Proxy die Spec eines anderen. */
+  #zwischenstand = new Map<string, { dokument: OpenApiDokument; bis: number }>();
 
-  constructor(einstellungen: Einstellungen, holen: typeof fetch = fetch) {
-    this.#einstellungen = einstellungen;
+  constructor(holen: typeof fetch = fetch) {
     this.#holen = holen;
   }
 
   /** Holt die Spec von oben, faellt bei Ausfall auf die mitgelieferte Kopie zurueck. */
-  async obenHolen(): Promise<{ dokument: OpenApiDokument; quelle: "oben" | "kopie" }> {
-    const basis = this.#einstellungen.lesen("upstreamBasis");
+  async obenHolen(
+    upstreamBasis: string,
+    zeitlimitMs: number,
+  ): Promise<{ dokument: OpenApiDokument; quelle: "oben" | "kopie" }> {
     const jetzt = Date.now();
-    if (this.#zwischenstand && this.#zwischenstand.bis > jetzt && this.#zwischenstand.basis === basis) {
-      return { dokument: this.#zwischenstand.dokument, quelle: "oben" };
+    const gemerkt = this.#zwischenstand.get(upstreamBasis);
+    if (gemerkt !== undefined && gemerkt.bis > jetzt) {
+      return { dokument: gemerkt.dokument, quelle: "oben" };
     }
     try {
-      const antwort = await this.#holen(`${basis}/swagger/aas/swagger.json`, {
-        signal: AbortSignal.timeout(this.#einstellungen.zeitlimit()),
+      const antwort = await this.#holen(`${upstreamBasis}/swagger/aas/swagger.json`, {
+        signal: AbortSignal.timeout(zeitlimitMs),
       });
       if (!antwort.ok) throw new Error(`Status ${antwort.status}`);
       const dokument = (await antwort.json()) as OpenApiDokument;
       if (typeof dokument?.paths !== "object" || dokument.paths === null) {
         throw new Error("Antwort enthaelt kein paths-Objekt");
       }
-      this.#zwischenstand = { dokument, bis: jetzt + CACHE_DAUER_MS, basis };
+      this.#zwischenstand.set(upstreamBasis, { dokument, bis: jetzt + CACHE_DAUER_MS });
       return { dokument, quelle: "oben" };
     } catch {
       return { dokument: mitgelieferteSpec(), quelle: "kopie" };
     }
   }
 
-  async dokument(proxyBasis: string): Promise<{ dokument: OpenApiDokument; quelle: "oben" | "kopie" }> {
-    const { dokument, quelle } = await this.obenHolen();
+  async dokument(
+    upstreamBasis: string,
+    zeitlimitMs: number,
+    proxyBasis: string,
+  ): Promise<{ dokument: OpenApiDokument; quelle: "oben" | "kopie" }> {
+    const { dokument, quelle } = await this.obenHolen(upstreamBasis, zeitlimitMs);
     return { dokument: zusammenfuehren(dokument, proxyBasis), quelle };
   }
 }

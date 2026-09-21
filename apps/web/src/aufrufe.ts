@@ -37,10 +37,11 @@ export interface Aufruf {
 }
 
 /**
- * Der Bezeichner des Assets, also die Eingabe von Discovery. Er darf bereits
- * die Zielform tragen, dann steht die itemID im Query-Teil.
+ * Der Bezeichner des Assets, also die Eingabe von Discovery: die itemID steht
+ * im Pfad. Die Zielform mit `?itemId=` wird ebenfalls angenommen, ist hier
+ * aber nicht das Beispiel, weil sie schon das Ergebnis wäre.
  */
-const BEISPIEL_GLOBAL_ASSET_ID = "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291";
+const BEISPIEL_GLOBAL_ASSET_ID = "https://viewer-rc.test.dti.neoception.dev/VNDP77EV202504291";
 
 /** Die Kennung einer Verwaltungsschale, also die Ausgabe von Discovery. */
 const BEISPIEL_AAS_ID = "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291";
@@ -232,8 +233,17 @@ function pfadwert(roh: string, istKennung: boolean, kodieren: boolean): string {
   return encodeURIComponent(istKennung && kodieren ? base64url(roh) : roh);
 }
 
-export function urlBauen(aufruf: Aufruf, werte: Record<string, string>, kodieren: boolean): string {
-  let pfad = aufruf.vorlage;
+/**
+ * @param praefix Basispfad des Proxys, "" beim Standard an der Wurzel,
+ *                sonst "/p/<kennung>".
+ */
+export function urlBauen(
+  aufruf: Aufruf,
+  werte: Record<string, string>,
+  kodieren: boolean,
+  praefix = "",
+): string {
+  let pfad = praefix + aufruf.vorlage;
   for (const parameter of aufruf.parameter) {
     if (parameter.ort !== "pfad") continue;
     const roh = werte[parameter.name] ?? "";

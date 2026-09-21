@@ -59,9 +59,18 @@ describe("Oberflaeche unter /admin", () => {
 });
 
 describe("Wurzel", () => {
-  it("leitet auf die Swagger-Seite", async () => {
+  // Mit mehreren Proxys ist die Uebersicht der sinnvolle Einstieg, nicht die
+  // Swagger-Seite eines einzelnen.
+  it("leitet auf die Verwaltung", async () => {
     stand = pruefstand(undefined, { webVerzeichnis });
     const antwort = await roheAnfrage(stand.app, "/");
+    expect(antwort.status).toBe(302);
+    expect(antwort.kopfzeilen.location).toBe("/admin/");
+  });
+
+  it("laesst die Swagger-Seite des Standards an ihrem Platz", async () => {
+    stand = pruefstand(undefined, { webVerzeichnis });
+    const antwort = await roheAnfrage(stand.app, "/swagger");
     expect(antwort.status).toBe(302);
     expect(antwort.kopfzeilen.location).toBe("/swagger/index.html");
   });
