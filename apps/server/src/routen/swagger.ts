@@ -75,6 +75,7 @@ export function swaggerRouter(einstellungen: Einstellungen, proxys: Proxys, quel
         proxy.upstreamBasis,
         proxy.zeitlimitMs,
         proxyBasisAus(req, einstellungen, proxy),
+        { shells: proxy.shellsAktiv, registry: proxy.registryAktiv, submodelRegistry: proxy.submodelRegistryAktiv },
       );
       res.setHeader("x-spec-quelle", herkunft);
       res.json(dokument);

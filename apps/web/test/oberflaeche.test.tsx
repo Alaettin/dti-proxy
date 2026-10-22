@@ -1,6 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ApiReiter, ProxyFormular, Uebersicht, type ProxyAnsicht } from "../src/App.js";
+import {
+  aasIdAus,
+  ApiReiter,
+  erneuerungsStand,
+  ItemIds,
+  ProxyFormular,
+  Uebersicht,
+  zeilenAus,
+  type ProxyAnsicht,
+} from "../src/App.js";
 import { AUFRUFE } from "../src/aufrufe.js";
 
 /**
@@ -24,9 +33,17 @@ const ERSTER: ProxyAnsicht = {
   upstreamBasis: "https://rc.test",
   aasBasis: "https://viewer.test",
   zeitlimitMs: 30_000,
+  pufferStunden: 24,
+  shellsAktiv: true,
+  registryAktiv: true,
+  submodelRegistryAktiv: true,
+  erneuertAm: "2026-10-22T08:00:00.000Z",
+  naechsteErneuerung: "2026-10-23T08:00:00.000Z",
+  erneuerungLaeuft: false,
   angelegtAm: "2026-09-21T00:00:00.000Z",
   basisUrl: "https://dti-proxy.test/p/rc",
   basisPfad: "/p/rc",
+  pufferEintraege: 7,
 };
 
 const ZWEITER: ProxyAnsicht = {
@@ -57,11 +74,11 @@ describe("Rendervorgang", () => {
     expect(SICHTBAR.length).toBeGreaterThan(200);
   });
 
-  it("zeigt alle elf Aufrufe", () => {
+  it("zeigt alle sechzehn Aufrufe", () => {
     for (const aufruf of AUFRUFE) {
       expect(text(API_ERSTER), aufruf.id).toContain(aufruf.vorlage);
     }
-    expect(AUFRUFE).toHaveLength(11);
+    expect(AUFRUFE).toHaveLength(16);
   });
 
   it("zeigt jede Gruppe als Ueberschrift", () => {
@@ -159,5 +176,137 @@ describe("Sichtbarer Text", () => {
     for (const bezeichnung of ["Name", "Kennung", "Zielsystem", "Basis der erzeugten AAS-IDs", "Zeitlimit"]) {
       expect(text(FORMULAR)).toContain(bezeichnung);
     }
+  });
+});
+
+describe("Item-IDs", () => {
+  const KARTE = text(renderToStaticMarkup(<ItemIds proxy={ERSTER} neuLaden={async () => undefined} />));
+
+  it("zeigt Karte, Takt der Erneuerung, Bestand und den Knopf", () => {
+    expect(KARTE).toContain("Item-IDs für GET /shells und die Registries");
+    expect(KARTE).toContain("alle 24 Stunden auf einmal");
+    expect(KARTE).not.toContain("ausgeschaltet");
+    expect(KARTE).toContain("7 Schalen im Bestand");
+    expect(KARTE).toContain("zuletzt erneuert");
+    expect(KARTE).toContain("nächste Erneuerung");
+    expect(KARTE).toContain("Jetzt erneuern");
+    expect(KARTE).not.toContain("Puffer leeren");
+  });
+
+  it("sagt, wenn der Puffer aus ist, und sperrt dann den Knopf", () => {
+    const markup = renderToStaticMarkup(<ItemIds proxy={{ ...ERSTER, pufferStunden: 0 }} neuLaden={async () => undefined} />);
+    expect(text(markup)).toContain("ohne Puffer geht jeder Aufruf nach oben");
+    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>Jetzt erneuern/);
+    const eine = text(renderToStaticMarkup(<ItemIds proxy={{ ...ERSTER, pufferStunden: 1 }} neuLaden={async () => undefined} />));
+    expect(eine).toContain("alle 1 Stunde auf einmal");
+  });
+
+  it("sagt, wenn alle drei Wege ausgeschaltet sind", () => {
+    const alleAus = text(
+      renderToStaticMarkup(
+        <ItemIds
+          proxy={{ ...ERSTER, shellsAktiv: false, registryAktiv: false, submodelRegistryAktiv: false }}
+          neuLaden={async () => undefined}
+        />,
+      ),
+    );
+    expect(alleAus).toContain("GET /shells und beide Registries sind für diesen Proxy ausgeschaltet");
+    // Einer an genuegt, damit die Liste gebraucht wird.
+    const nurSubmodel = text(
+      renderToStaticMarkup(
+        <ItemIds proxy={{ ...ERSTER, shellsAktiv: false, registryAktiv: false }} neuLaden={async () => undefined} />,
+      ),
+    );
+    expect(nurSubmodel).not.toContain("ausgeschaltet");
+  });
+
+  it("beschreibt den Stand der Erneuerung", () => {
+    const leer = { pufferEintraege: 0, erneuertAm: null, naechsteErneuerung: null, erneuerungLaeuft: false };
+    expect(erneuerungsStand(leer)).toBe("0 Schalen im Bestand, noch nicht erneuert.");
+    expect(erneuerungsStand({ ...leer, pufferEintraege: 1, erneuerungLaeuft: true })).toBe(
+      "1 Schale im Bestand, Erneuerung läuft.",
+    );
+    const fertig = erneuerungsStand({
+      pufferEintraege: 3,
+      erneuertAm: "2026-10-22T08:00:00.000Z",
+      naechsteErneuerung: "2026-10-23T08:00:00.000Z",
+      erneuerungLaeuft: false,
+    });
+    expect(fertig).toMatch(/^3 Schalen im Bestand, zuletzt erneuert 22\.10\.26, \d\d:\d\d, nächste Erneuerung 23\.10\.26, \d\d:\d\d\.$/);
+  });
+
+  it("liest eine Item-ID je Zeile wie der Server", () => {
+    expect(zeilenAus(" B \r\n\nA\nB\n  \nC")).toEqual(["B", "A", "C"]);
+    expect(zeilenAus("")).toEqual([]);
+  });
+
+  it("baut die AAS-ID wie Discovery", () => {
+    expect(aasIdAus("https://viewer.test", "A B/1")).toBe("https://viewer.test/aas?itemId=A%20B%2F1");
+  });
+});
+
+describe("Proxyformular", () => {
+  it("bietet die Pufferdauer an", () => {
+    expect(text(FORMULAR)).toContain("Puffer für GET /shells in Stunden");
+  });
+
+  it("bietet den Schalter fuer GET /shells an und zeigt seinen Stand", () => {
+    expect(text(FORMULAR)).toContain("GET /shells anbieten");
+    expect(FORMULAR).not.toMatch(/type="checkbox"[^>]*checked/);
+    const an = renderToStaticMarkup(<ProxyFormular werte={{ shellsAktiv: "true" }} setzen={() => undefined} />);
+    expect(an).toMatch(/type="checkbox"[^>]*checked/);
+  });
+
+  it("bietet einen eigenen Schalter fuer die Submodel Registry an", () => {
+    expect(text(FORMULAR)).toContain("Submodel Registry anbieten");
+    const nurSubmodel = renderToStaticMarkup(
+      <ProxyFormular werte={{ submodelRegistryAktiv: "true" }} setzen={() => undefined} />,
+    );
+    expect(nurSubmodel.match(/type="checkbox"[^>]*checked/g)).toHaveLength(1);
+    expect(nurSubmodel).toMatch(/checked=""[^>]*\/><span>Submodel Registry anbieten/);
+  });
+
+  it("bietet einen eigenen Schalter fuer die Registry an", () => {
+    expect(text(FORMULAR)).toContain("Registry anbieten");
+    const nurRegistry = renderToStaticMarkup(<ProxyFormular werte={{ registryAktiv: "true" }} setzen={() => undefined} />);
+    // Genau ein Haken: der der Registry, nicht der von GET /shells.
+    expect(nurRegistry.match(/type="checkbox"[^>]*checked/g)).toHaveLength(1);
+    expect(nurRegistry).toMatch(/checked=""[^>]*\/><span>Registry anbieten/);
+  });
+});
+
+describe("Reiter API und Schalter", () => {
+  it("zeigt GET /shells nur bei eingeschaltetem Proxy", () => {
+    const an = text(renderToStaticMarkup(<ApiReiter proxy={ERSTER} />));
+    const aus = text(renderToStaticMarkup(<ApiReiter proxy={{ ...ERSTER, shellsAktiv: false }} />));
+    // /shells allein, nicht /shells/{aasIdentifier}.
+    const nurShells = /\/shells(?![/\w])/;
+    expect(an).toMatch(nurShells);
+    expect(aus).not.toMatch(nurShells);
+    // Die durchgereichten Aufrufe bleiben.
+    expect(aus).toContain("/shells/{aasIdentifier}");
+  });
+
+  it("zeigt in der Uebersicht, ob GET /shells und die Registries an sind", () => {
+    expect(text(UEBERSICHT)).toContain("GET /shells an");
+    expect(text(UEBERSICHT)).toContain("· Registry an");
+    expect(text(UEBERSICHT)).toContain("Submodel Registry an");
+  });
+
+  it("zeigt die Submodel Registry nur bei eingeschaltetem Proxy", () => {
+    const an = text(renderToStaticMarkup(<ApiReiter proxy={ERSTER} />));
+    const aus = text(renderToStaticMarkup(<ApiReiter proxy={{ ...ERSTER, submodelRegistryAktiv: false }} />));
+    expect(an).toContain("/submodel-descriptors/{submodelIdentifier}");
+    expect(aus).not.toContain("/submodel-descriptors");
+    expect(aus).not.toContain("SubmodelRegistry");
+  });
+
+  it("zeigt die Registry nur bei eingeschaltetem Proxy", () => {
+    const an = text(renderToStaticMarkup(<ApiReiter proxy={ERSTER} />));
+    const aus = text(renderToStaticMarkup(<ApiReiter proxy={{ ...ERSTER, registryAktiv: false }} />));
+    expect(an).toContain("/shell-descriptors/{aasIdentifier}");
+    expect(an).toContain("AssetAdministrationShellRegistry");
+    expect(aus).not.toContain("/shell-descriptors");
+    expect(aus).not.toContain("AssetAdministrationShellRegistry");
   });
 });

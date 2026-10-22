@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AUFRUFE, base64url, curlBauen, urlBauen, type Aufruf } from "../src/aufrufe.js";
+import { assetIdKodieren, AUFRUFE, aufrufeFuer, base64url, curlBauen, urlBauen, type Aufruf } from "../src/aufrufe.js";
 
 const hier = path.dirname(fileURLToPath(import.meta.url));
 const spec = JSON.parse(
@@ -15,11 +15,72 @@ function nimm(id: string): Aufruf {
   return gefunden;
 }
 
+describe("aufrufeFuer", () => {
+  const vorlagen = (liste: Aufruf[]): string[] => liste.map((aufruf) => aufruf.vorlage);
+
+  const AUS = { shellsAktiv: false, registryAktiv: false, submodelRegistryAktiv: false };
+
+  it("nimmt bei allen Schaltern an alle Aufrufe auf", () => {
+    expect(aufrufeFuer({ shellsAktiv: true, registryAktiv: true, submodelRegistryAktiv: true })).toHaveLength(
+      AUFRUFE.length,
+    );
+  });
+
+  it("laesst GET /shells und die Registries je nach Schalter weg", () => {
+    const keiner = aufrufeFuer(AUS);
+    expect(keiner).toHaveLength(AUFRUFE.length - 5);
+    expect(vorlagen(keiner)).not.toContain("/shells");
+    expect(vorlagen(keiner)).not.toContain("/shell-descriptors");
+    expect(vorlagen(keiner)).not.toContain("/submodel-descriptors");
+
+    const nurRegistry = vorlagen(aufrufeFuer({ ...AUS, registryAktiv: true }));
+    expect(nurRegistry).toContain("/shell-descriptors");
+    expect(nurRegistry).toContain("/shell-descriptors/{aasIdentifier}");
+    expect(nurRegistry).not.toContain("/shells");
+    expect(nurRegistry).not.toContain("/submodel-descriptors");
+
+    const nurSubmodel = vorlagen(aufrufeFuer({ ...AUS, submodelRegistryAktiv: true }));
+    expect(nurSubmodel).toContain("/submodel-descriptors");
+    expect(nurSubmodel).toContain("/submodel-descriptors/{submodelIdentifier}");
+    expect(nurSubmodel).not.toContain("/shell-descriptors");
+
+    const nurShells = vorlagen(aufrufeFuer({ ...AUS, shellsAktiv: true }));
+    expect(nurShells).toContain("/shells");
+    expect(nurShells).not.toContain("/shell-descriptors");
+  });
+});
+
 describe("Katalog", () => {
-  it("deckt die Pfade der Spec plus Discovery ab, sonst fehlt oder faulenzt einer", () => {
+  it("deckt die Pfade der Spec plus GET /shells, beide Registries und Discovery ab, sonst fehlt oder faulenzt einer", () => {
     const imKatalog = AUFRUFE.map((aufruf) => aufruf.vorlage).sort();
-    const erwartet = [...Object.keys(spec.paths), "/lookup/shellsByAssetLink"].sort();
+    const erwartet = [
+      ...Object.keys(spec.paths),
+      "/shells",
+      "/shell-descriptors",
+      "/shell-descriptors/{aasIdentifier}",
+      "/submodel-descriptors",
+      "/submodel-descriptors/{submodelIdentifier}",
+      "/lookup/shellsByAssetLink",
+    ].sort();
     expect(imKatalog).toEqual(erwartet);
+  });
+
+  it("kodiert assetType der Registry als base64url, nur mit Schalter", () => {
+    const aufruf = nimm("shell-descriptors");
+    const an = new URL(urlBauen(aufruf, { assetType: "Pumpe/1", assetKind: "Type" }, true), "https://x.test");
+    expect(an.searchParams.get("assetType")).toBe(base64url("Pumpe/1"));
+    expect(an.searchParams.get("assetKind")).toBe("Type");
+    expect(urlBauen(aufruf, { assetType: "roh" }, false)).toBe("/shell-descriptors?assetType=roh");
+  });
+
+  it("kodiert die Kennung im Einzelabruf der Submodel Registry", () => {
+    const url = urlBauen(nimm("submodel-descriptor"), { submodelIdentifier: "https://x.test/sm?itemId=A" }, true);
+    expect(url).toBe(`/submodel-descriptors/${base64url("https://x.test/sm?itemId=A")}`);
+  });
+
+  it("kodiert die Kennung im Einzelabruf der Registry", () => {
+    const url = urlBauen(nimm("shell-descriptor"), { aasIdentifier: "https://x.test/aas?itemId=A" }, true, "/p/rc");
+    expect(url).toBe(`/p/rc/shell-descriptors/${base64url("https://x.test/aas?itemId=A")}`);
   });
 
   it("vergibt jede Kennung nur einmal", () => {
@@ -118,6 +179,28 @@ describe("urlBauen", () => {
 
   it("nimmt fehlende Werte als leer, statt den Platzhalter stehen zu lassen", () => {
     expect(urlBauen(nimm("shell"), {}, true)).toBe("/shells/");
+  });
+});
+
+describe("assetIds von GET /shells", () => {
+  const GLOBAL = "https://viewer-rc.test.dti.neoception.dev/VNDP77EV202504291";
+
+  it("kodiert jede globalAssetId als SpecificAssetId", () => {
+    const zurueck = JSON.parse(Buffer.from(assetIdKodieren(GLOBAL), "base64url").toString("utf8")) as unknown;
+    expect(zurueck).toEqual({ name: "globalAssetId", value: GLOBAL });
+  });
+
+  it("haengt mehrere Werte einzeln und kodiert an", () => {
+    const url = urlBauen(nimm("shells"), { assetIds: `${GLOBAL}, https://x.test/B`, limit: "5" }, true, "/p/rc");
+    const anfrage = new URL(url, "https://proxy.test").searchParams;
+    expect(new URL(url, "https://proxy.test").pathname).toBe("/p/rc/shells");
+    expect(anfrage.getAll("assetIds")).toEqual([assetIdKodieren(GLOBAL), assetIdKodieren("https://x.test/B")]);
+    expect(anfrage.get("limit")).toBe("5");
+  });
+
+  it("laesst die Werte roh, wenn der Schalter aus ist (Gegenprobe)", () => {
+    const url = urlBauen(nimm("shells"), { assetIds: "schon-kodiert" }, false);
+    expect(url).toBe("/shells?assetIds=schon-kodiert");
   });
 });
 

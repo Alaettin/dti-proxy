@@ -2,6 +2,7 @@ import { Ajv, type ErrorObject } from "ajv";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { zustaendigFuer } from "../aufloesung.js";
 import { ergebnisAus, type Uhr, echteUhr } from "../fehler.js";
+import { grenzeAus, seiteAus, versatzAus } from "../paging.js";
 import { DISCOVERY_PFAD } from "../pfade.js";
 import type { Proxys } from "../proxys.js";
 
@@ -105,30 +106,6 @@ export function aasIdBauen(aasBasis: string, itemId: string): string {
   return `${aasBasis}/aas?itemId=${encodeURIComponent(itemId)}`;
 }
 
-function versatzAus(cursor: unknown): number | null {
-  if (cursor === undefined) return 0;
-  if (typeof cursor !== "string" || cursor === "") return null;
-  // Buffer.from wirft bei Muell nicht, sondern verschluckt die unbekannten
-  // Zeichen. Deshalb Alphabet und Ergebnis ausdruecklich pruefen.
-  if (!/^[A-Za-z0-9_-]+$/.test(cursor)) return null;
-  const entpackt = Buffer.from(cursor, "base64url").toString("utf8");
-  if (!/^\d+$/.test(entpackt)) return null;
-  const zahl = Number(entpackt);
-  return Number.isSafeInteger(zahl) ? zahl : null;
-}
-
-function cursorAus(versatz: number): string {
-  return Buffer.from(String(versatz), "utf8").toString("base64url");
-}
-
-function grenzeAus(limit: unknown): number | null | "fehler" {
-  if (limit === undefined) return null;
-  if (typeof limit !== "string") return "fehler";
-  const zahl = Number(limit);
-  if (!Number.isInteger(zahl) || zahl < 1) return "fehler";
-  return zahl;
-}
-
 export interface DiscoveryOptionen {
   proxys: Proxys;
   uhr?: Uhr;
@@ -183,12 +160,10 @@ export function discovery({ proxys, uhr = echteUhr }: DiscoveryOptionen): Reques
       if (!gefunden.includes(id)) gefunden.push(id);
     }
 
-    const ende = grenze === null ? gefunden.length : versatz + grenze;
-    const seite = gefunden.slice(versatz, ende);
-    const weitere = ende < gefunden.length;
+    const { seite, cursor } = seiteAus(gefunden, versatz, grenze);
 
     res.status(200).json({
-      paging_metadata: weitere ? { cursor: cursorAus(ende) } : {},
+      paging_metadata: cursor === undefined ? {} : { cursor },
       result: seite,
     });
   };

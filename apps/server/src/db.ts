@@ -10,6 +10,10 @@ export const PROXY_VORGABEN = {
   upstreamBasis: "https://rc.test.dti.neoception.dev",
   aasBasis: "https://viewer-rc.test.dti.neoception.dev",
   zeitlimitMs: 30_000,
+  pufferStunden: 24,
+  shellsAktiv: false,
+  registryAktiv: false,
+  submodelRegistryAktiv: false,
 } as const;
 
 function spalten(db: Datenbank, tabelle: string): string[] {
@@ -65,12 +69,41 @@ function altenStandUebernehmen(db: Datenbank): void {
   db.prepare("DELETE FROM einstellungen WHERE schluessel IN ('upstreamBasis','aasBasis','zeitlimitMs')").run();
 }
 
+/**
+ * Wanderung vom Stand ohne GET /shells. Bestehende Proxys bekommen die
+ * Vorgaben, der Endpunkt ist bei ihnen also aus, bis ihn jemand einschaltet.
+ */
+function shellsSpaltenErgaenzen(db: Datenbank): void {
+  const vorhanden = spalten(db, "proxys");
+  if (!vorhanden.includes("pufferStunden")) {
+    db.exec(`ALTER TABLE proxys ADD COLUMN pufferStunden INTEGER NOT NULL DEFAULT ${PROXY_VORGABEN.pufferStunden}`);
+  }
+  if (!vorhanden.includes("shellsAktiv")) {
+    db.exec(`ALTER TABLE proxys ADD COLUMN shellsAktiv INTEGER NOT NULL DEFAULT ${PROXY_VORGABEN.shellsAktiv ? 1 : 0}`);
+  }
+  if (!vorhanden.includes("registryAktiv")) {
+    db.exec(
+      `ALTER TABLE proxys ADD COLUMN registryAktiv INTEGER NOT NULL DEFAULT ${PROXY_VORGABEN.registryAktiv ? 1 : 0}`,
+    );
+  }
+  if (!vorhanden.includes("submodelRegistryAktiv")) {
+    db.exec(
+      `ALTER TABLE proxys ADD COLUMN submodelRegistryAktiv INTEGER NOT NULL DEFAULT ${
+        PROXY_VORGABEN.submodelRegistryAktiv ? 1 : 0
+      }`,
+    );
+  }
+}
+
 export function datenbankOeffnen(datei: string = konfiguration.datenbankDatei): Datenbank {
   if (datei !== ":memory:") {
     fs.mkdirSync(path.dirname(datei), { recursive: true });
   }
   const db = new Database(datei);
   db.pragma("journal_mode = WAL");
+  // better-sqlite3 hat das ab Werk an. Ausdruecklich, weil sonst ON DELETE
+  // CASCADE die Item-IDs eines geloeschten Proxys still liegen liesse.
+  db.pragma("foreign_keys = ON");
   db.exec(`
     CREATE TABLE IF NOT EXISTS einstellungen (
       schluessel TEXT PRIMARY KEY,
@@ -86,8 +119,17 @@ export function datenbankOeffnen(datei: string = konfiguration.datenbankDatei): 
       zeitlimitMs   INTEGER NOT NULL,
       angelegtAm    TEXT    NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS items (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      proxyId  INTEGER NOT NULL REFERENCES proxys(id) ON DELETE CASCADE,
+      itemId   TEXT    NOT NULL,
+      position INTEGER NOT NULL,
+      UNIQUE (proxyId, itemId)
+    );
   `);
   standardAbbauen(db);
+  shellsSpaltenErgaenzen(db);
   altenStandUebernehmen(db);
   return db;
 }

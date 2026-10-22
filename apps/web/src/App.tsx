@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { AUFRUFE, curlBauen, urlBauen, type Aufruf, type Parameter } from "./aufrufe.js";
+import { AUFRUFE, aufrufeFuer, curlBauen, urlBauen, type Aufruf, type Parameter } from "./aufrufe.js";
 
 export interface ProxyAnsicht {
   kennung: string;
@@ -7,9 +7,19 @@ export interface ProxyAnsicht {
   upstreamBasis: string;
   aasBasis: string;
   zeitlimitMs: number;
+  pufferStunden: number;
+  shellsAktiv: boolean;
+  registryAktiv: boolean;
+  submodelRegistryAktiv: boolean;
+  /** Zeitpunkte als ISO-Text, null solange es keinen gibt. */
+  erneuertAm: string | null;
+  naechsteErneuerung: string | null;
+  erneuerungLaeuft: boolean;
   angelegtAm: string;
   basisUrl: string;
   basisPfad: string;
+  /** Zahl der Schalen, die GET /shells gerade im Puffer hat. */
+  pufferEintraege: number;
 }
 
 /**
@@ -134,12 +144,21 @@ function Kopieren({ wert, was }: { wert: string; was: string }): React.ReactElem
   );
 }
 
-export const PROXY_FELDER: { name: "name" | "kennung" | "upstreamBasis" | "aasBasis" | "zeitlimitMs"; titel: string; hinweis: string }[] = [
+export const PROXY_FELDER: {
+  name: "name" | "kennung" | "upstreamBasis" | "aasBasis" | "zeitlimitMs" | "pufferStunden";
+  titel: string;
+  hinweis: string;
+}[] = [
   { name: "name", titel: "Name", hinweis: "Nur zur Anzeige." },
   { name: "kennung", titel: "Kennung", hinweis: "Steht in der Adresse unter /p/. Kleinbuchstaben, Ziffern, Bindestriche." },
   { name: "upstreamBasis", titel: "Zielsystem", hinweis: "Dorthin gehen die zehn AAS-Aufrufe unverändert." },
   { name: "aasBasis", titel: "Basis der erzeugten AAS-IDs", hinweis: "Schema und Domain für /aas?itemId=…" },
   { name: "zeitlimitMs", titel: "Zeitlimit in Millisekunden", hinweis: "Zwischen 1000 und 300000." },
+  {
+    name: "pufferStunden",
+    titel: "Puffer für GET /shells in Stunden",
+    hinweis: "So lange bleibt eine Schale von oben gespeichert. 0 schaltet den Puffer ab, höchstens 720.",
+  },
 ];
 
 export function ProxyFormular({
@@ -165,6 +184,33 @@ export function ProxyFormular({
           />
         </label>
       ))}
+      <label className="schalter">
+        <input
+          type="checkbox"
+          checked={werte.shellsAktiv === "true"}
+          onChange={(e) => setzen({ ...werte, shellsAktiv: e.target.checked ? "true" : "false" })}
+        />
+        <span>GET /shells anbieten</span>
+      </label>
+      <label className="schalter">
+        <input
+          type="checkbox"
+          checked={werte.registryAktiv === "true"}
+          onChange={(e) => setzen({ ...werte, registryAktiv: e.target.checked ? "true" : "false" })}
+        />
+        <span>Registry anbieten (GET /shell-descriptors)</span>
+      </label>
+      <label className="schalter">
+        <input
+          type="checkbox"
+          checked={werte.submodelRegistryAktiv === "true"}
+          onChange={(e) => setzen({ ...werte, submodelRegistryAktiv: e.target.checked ? "true" : "false" })}
+        />
+        <span>Submodel Registry anbieten (GET /submodel-descriptors)</span>
+      </label>
+      <p className="hinweis">
+        Ausgeschaltet antworten die Wege mit 404 und fehlen auf der Swagger-Seite. Die Item-IDs bleiben gespeichert.
+      </p>
     </>
   );
 }
@@ -175,6 +221,10 @@ const LEERER_PROXY: Record<string, string> = {
   upstreamBasis: "https://rc.test.dti.neoception.dev",
   aasBasis: "https://viewer-rc.test.dti.neoception.dev",
   zeitlimitMs: "30000",
+  pufferStunden: "24",
+  shellsAktiv: "false",
+  registryAktiv: "false",
+  submodelRegistryAktiv: "false",
 };
 
 export function Uebersicht({
@@ -272,7 +322,7 @@ export function Uebersicht({
         <p className="hinweis">
           {proxys.length === 0
             ? "Noch kein Proxy angelegt. Ein Proxy braucht einen Namen und ein Zielsystem, danach ist er unter seiner eigenen Basis-URL erreichbar."
-            : "Jeder Proxy reicht die zehn AAS-Aufrufe an sein eigenes Zielsystem weiter und ergänzt Discovery. Jeder liegt unter seiner eigenen Kennung."}
+            : "Jeder Proxy reicht die zehn AAS-Aufrufe an sein eigenes Zielsystem weiter und ergänzt GET /shells und Discovery. Jeder liegt unter seiner eigenen Kennung."}
         </p>
         <Meldungsfeld meldung={meldung} />
       </div>
@@ -283,7 +333,10 @@ export function Uebersicht({
             {proxy.name}
             {proxy.kennung === gewaehlt && <span className="schild gut abstand-links">Gewählt</span>}
           </h2>
-          <p className="hinweis">Zielsystem {proxy.upstreamBasis}</p>
+          <p className="hinweis">
+            Zielsystem {proxy.upstreamBasis} · GET /shells {proxy.shellsAktiv ? "an" : "aus"} · Registry{" "}
+            {proxy.registryAktiv ? "an" : "aus"} · Submodel Registry {proxy.submodelRegistryAktiv ? "an" : "aus"}
+          </p>
           <div className="basis">
             <code>{proxy.basisUrl}</code>
             <Kopieren wert={proxy.basisUrl} was="Die Basis-URL wurde" />
@@ -363,6 +416,10 @@ export function Einstellungen({
       upstreamBasis: proxy.upstreamBasis,
       aasBasis: proxy.aasBasis,
       zeitlimitMs: String(proxy.zeitlimitMs),
+      pufferStunden: String(proxy.pufferStunden),
+      shellsAktiv: String(proxy.shellsAktiv),
+      registryAktiv: String(proxy.registryAktiv),
+      submodelRegistryAktiv: String(proxy.submodelRegistryAktiv),
     }),
     [proxy],
   );
@@ -453,6 +510,8 @@ export function Einstellungen({
         <Meldungsfeld meldung={meldung} />
       </div>
 
+      <ItemIds proxy={proxy} neuLaden={neuLaden} />
+
       <div className="karte">
         <h2>Für alle Proxys</h2>
         <p className="hinweis">
@@ -470,6 +529,178 @@ export function Einstellungen({
         </button>
       </div>
     </>
+  );
+}
+
+/** Eine Item-ID je Zeile; Leerraum, leere Zeilen und Doppelte fallen weg wie auf dem Server. */
+export function zeilenAus(text: string): string[] {
+  const zeilen = text.split(/\r?\n/).map((zeile) => zeile.trim());
+  return [...new Set(zeilen.filter((zeile) => zeile !== ""))];
+}
+
+/** Dieselbe Regel wie in Discovery: die Kennung der Schale zu einer itemID. */
+export function aasIdAus(aasBasis: string, itemId: string): string {
+  return `${aasBasis}/aas?itemId=${encodeURIComponent(itemId)}`;
+}
+
+function zeitText(iso: string): string {
+  return new Date(iso).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
+}
+
+/** Ein Satz zum Stand des Bestands: wie viele Schalen, wann erneuert, wann wieder. */
+export function erneuerungsStand(
+  proxy: Pick<ProxyAnsicht, "pufferEintraege" | "erneuertAm" | "naechsteErneuerung" | "erneuerungLaeuft">,
+): string {
+  const teile = [`${proxy.pufferEintraege} ${proxy.pufferEintraege === 1 ? "Schale" : "Schalen"} im Bestand`];
+  if (proxy.erneuerungLaeuft) teile.push("Erneuerung läuft");
+  else if (proxy.erneuertAm === null) teile.push("noch nicht erneuert");
+  else teile.push(`zuletzt erneuert ${zeitText(proxy.erneuertAm)}`);
+  if (!proxy.erneuerungLaeuft && proxy.naechsteErneuerung !== null) {
+    teile.push(`nächste Erneuerung ${zeitText(proxy.naechsteErneuerung)}`);
+  }
+  return `${teile.join(", ")}.`;
+}
+
+export function ItemIds({
+  proxy,
+  neuLaden,
+}: {
+  proxy: ProxyAnsicht;
+  neuLaden: () => Promise<void>;
+}): React.ReactElement {
+  const [gespeichert, setzeGespeichert] = useState<string[] | null>(null);
+  const [entwurf, setzeEntwurf] = useState("");
+  const [meldung, setzeMeldung] = useState<Meldung | null>(null);
+  const [laeuft, setzeLaeuft] = useState(false);
+
+  useEffect(() => {
+    let gueltig = true;
+    setzeGespeichert(null);
+    setzeMeldung(null);
+    void (async () => {
+      try {
+        const antwort = await hole(`/admin/api/proxys/${proxy.kennung}/items`);
+        const inhalt = (await antwort.json()) as { itemIds?: string[]; fehler?: string };
+        if (!gueltig) return;
+        if (!antwort.ok || inhalt.itemIds === undefined) {
+          setzeMeldung({ art: "schlecht", text: inhalt.fehler ?? "Die Liste ließ sich nicht laden." });
+          return;
+        }
+        setzeGespeichert(inhalt.itemIds);
+        setzeEntwurf(inhalt.itemIds.join("\n"));
+      } catch (fehler) {
+        if (gueltig) setzeMeldung({ art: "schlecht", text: `Der Server antwortet nicht: ${String(fehler)}` });
+      }
+    })();
+    return () => {
+      gueltig = false;
+    };
+  }, [proxy.kennung]);
+
+  const zeilen = zeilenAus(entwurf);
+  const geaendert = gespeichert !== null && zeilen.join("\n") !== gespeichert.join("\n");
+
+  async function speichern(): Promise<void> {
+    setzeLaeuft(true);
+    setzeMeldung(null);
+    try {
+      const antwort = await hole(`/admin/api/proxys/${proxy.kennung}/items`, {
+        method: "PUT",
+        body: JSON.stringify({ itemIds: zeilen }),
+      });
+      const inhalt = (await antwort.json()) as { itemIds?: string[]; fehler?: string };
+      if (!antwort.ok || inhalt.itemIds === undefined) {
+        setzeMeldung({ art: "schlecht", text: inhalt.fehler ?? "Das hat nicht geklappt." });
+        return;
+      }
+      setzeGespeichert(inhalt.itemIds);
+      setzeEntwurf(inhalt.itemIds.join("\n"));
+      setzeMeldung({ art: "gut", text: `Gespeichert, ${inhalt.itemIds.length} Item-IDs. Die Erneuerung läuft.` });
+      // Das Speichern stoesst die Erneuerung an; die Uebersicht soll das zeigen.
+      await neuLaden();
+    } catch (fehler) {
+      setzeMeldung({ art: "schlecht", text: `Der Server antwortet nicht: ${String(fehler)}` });
+    } finally {
+      setzeLaeuft(false);
+    }
+  }
+
+  async function erneuern(): Promise<void> {
+    setzeMeldung(null);
+    try {
+      const antwort = await hole(`/admin/api/proxys/${proxy.kennung}/erneuerung`, { method: "POST" });
+      if (!antwort.ok) {
+        const inhalt = (await antwort.json()) as { fehler?: string };
+        setzeMeldung({ art: "schlecht", text: inhalt.fehler ?? "Die Erneuerung ließ sich nicht anstoßen." });
+        return;
+      }
+      setzeMeldung({ art: "gut", text: "Die Erneuerung läuft. Den Stand zeigt die Übersicht nach dem Neuladen." });
+      await neuLaden();
+    } catch (fehler) {
+      setzeMeldung({ art: "schlecht", text: `Der Server antwortet nicht: ${String(fehler)}` });
+    }
+  }
+
+  const keinerAn = !proxy.shellsAktiv && !proxy.registryAktiv && !proxy.submodelRegistryAktiv;
+
+  return (
+    <div className="karte">
+      <h2>Item-IDs für GET /shells und die Registries</h2>
+      <p className="hinweis">
+        Aus diesen Item-IDs bilden GET /shells, die Registry und die Submodel Registry ihre Listen, eine je Zeile. Das
+        Zielsystem kennt das alles nicht, deshalb holt der Proxy alle Schalen selbst und erneuert sie{" "}
+        {proxy.pufferStunden === 0
+          ? "nicht: ohne Puffer geht jeder Aufruf nach oben"
+          : `alle ${proxy.pufferStunden} ${proxy.pufferStunden === 1 ? "Stunde" : "Stunden"} auf einmal`}
+        .
+      </p>
+      {keinerAn && (
+        <p className="hinweis">
+          GET /shells und beide Registries sind für diesen Proxy ausgeschaltet. Einschalten lassen sie sich oben in den
+          Einstellungen.
+        </p>
+      )}
+      <label>
+        <span>
+          Item-IDs <em>{gespeichert === null ? "Lädt …" : `${zeilen.length} Einträge`}</em>
+        </span>
+        <textarea
+          rows={10}
+          value={entwurf}
+          onChange={(e) => setzeEntwurf(e.target.value)}
+          spellCheck={false}
+          disabled={gespeichert === null}
+        />
+      </label>
+      {zeilen[0] !== undefined && (
+        <p className="hinweis">
+          Erzeugte AAS-ID der ersten Zeile: <code>{aasIdAus(proxy.aasBasis, zeilen[0])}</code>
+        </p>
+      )}
+      <div className="knopfreihe">
+        <button className="tat" type="button" onClick={() => void speichern()} disabled={laeuft || !geaendert}>
+          {laeuft ? "Speichert …" : "Speichern"}
+        </button>
+        <button
+          className="tat still"
+          type="button"
+          onClick={() => setzeEntwurf((gespeichert ?? []).join("\n"))}
+          disabled={!geaendert}
+        >
+          Verwerfen
+        </button>
+        <button
+          className="tat still"
+          type="button"
+          onClick={() => void erneuern()}
+          disabled={keinerAn || proxy.pufferStunden === 0 || proxy.erneuerungLaeuft}
+        >
+          Jetzt erneuern
+        </button>
+      </div>
+      <p className="hinweis">{erneuerungsStand(proxy)}</p>
+      <Meldungsfeld meldung={meldung} />
+    </div>
   );
 }
 
@@ -664,13 +895,13 @@ export function ApiReiter({ proxy }: { proxy: ProxyAnsicht }): React.ReactElemen
 
   const gruppen = useMemo(() => {
     const geordnet = new Map<string, Aufruf[]>();
-    for (const aufruf of AUFRUFE) {
+    for (const aufruf of aufrufeFuer(proxy)) {
       const liste = geordnet.get(aufruf.gruppe) ?? [];
       liste.push(aufruf);
       geordnet.set(aufruf.gruppe, liste);
     }
     return [...geordnet.entries()];
-  }, []);
+  }, [proxy]);
 
   function aendern(id: string, teil: Partial<Eingabe>): void {
     setzeEingaben((vorher) => ({ ...vorher, [id]: { ...vorher[id]!, ...teil } }));
@@ -945,7 +1176,7 @@ export function App(): React.ReactElement | null {
       <div className="kopf">
         <div>
           <h1>DTI Proxy</h1>
-          <p>Zehn AAS-Aufrufe unverändert weitergereicht, dazu Discovery nach SSP-001.</p>
+          <p>Zehn AAS-Aufrufe unverändert weitergereicht, dazu GET /shells aus gepflegten Item-IDs und Discovery nach SSP-001.</p>
         </div>
         <div className="knopfreihe">
           {proxys !== null && proxys.length > 0 && (

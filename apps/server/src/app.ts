@@ -3,10 +3,15 @@ import path from "node:path";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import type { Einstellungen } from "./einstellungen.js";
 import { ergebnis, type Uhr, echteUhr } from "./fehler.js";
+import { Erneuerer } from "./erneuerung.js";
 import { konfiguration } from "./konfiguration.js";
 import { SpecQuelle } from "./openapi.js";
 import type { Proxys } from "./proxys.js";
+import { SchalenPuffer } from "./puffer.js";
 import { discovery, istDiscovery } from "./routen/discovery.js";
+import { registry } from "./routen/registry.js";
+import { shells } from "./routen/shells.js";
+import { submodelRegistry } from "./routen/submodelRegistry.js";
 import { swaggerRouter } from "./routen/swagger.js";
 import { verwaltungRouter } from "./routen/verwaltung.js";
 import { weiterleitung } from "./routen/weiterleitung.js";
@@ -22,6 +27,10 @@ export interface AppOptionen {
   /** Ohne Angabe entscheidet die tatsaechliche Verbindung ueber das Secure-Merkmal. */
   sicher?: boolean;
   webVerzeichnis?: string | null;
+  /** Puffer fuer GET /shells und die Registries. Von aussen, damit index.ts und Pruefungen ihn teilen. */
+  puffer?: SchalenPuffer;
+  /** Erneuert den Puffer im Hintergrund. Den Takt startet index.ts, nicht die App. */
+  erneuerer?: Erneuerer;
 }
 
 export function appAnlegen({
@@ -34,6 +43,8 @@ export function appAnlegen({
   geheimnis = konfiguration.sitzungsGeheimnis,
   sicher,
   webVerzeichnis = konfiguration.webVerzeichnis,
+  puffer = new SchalenPuffer(),
+  erneuerer = new Erneuerer({ proxys, puffer, holen }),
 }: AppOptionen): Express {
   const app = express();
   app.disable("x-powered-by");
@@ -51,6 +62,9 @@ export function appAnlegen({
   // Ganz vorn und vor jedem Body-Parser: die Weiterleitung soll die Anfrage
   // sehen, wie sie hereinkam.
   app.use(weiterleitung({ proxys, holen, uhr }));
+  app.use(shells({ proxys, puffer, holen, uhr }));
+  app.use(registry({ proxys, puffer, einstellungen, holen, uhr }));
+  app.use(submodelRegistry({ proxys, puffer, einstellungen, holen, uhr }));
 
   // Der Body-Parser laeuft nur auf dem Discovery-Weg. Alles andere bleibt roh.
   const koerperLesen = express.json({ limit: "1mb", type: () => true });
@@ -64,8 +78,9 @@ export function appAnlegen({
 
   app.use(
     "/admin/api",
-    express.json({ limit: "64kb" }),
-    verwaltungRouter({ einstellungen, proxys, holen, benutzer, passwort, geheimnis, sicher }),
+    // Reicht fuer die Liste der Item-IDs: 10 000 Eintraege zu je rund 100 Zeichen.
+    express.json({ limit: "2mb" }),
+    verwaltungRouter({ einstellungen, proxys, puffer, erneuerer, holen, benutzer, passwort, geheimnis, sicher }),
   );
 
   if (webVerzeichnis !== null && fs.existsSync(webVerzeichnis)) {

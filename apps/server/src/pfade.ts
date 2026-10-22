@@ -22,6 +22,15 @@ export const AAS_PFADE = [
 
 export const DISCOVERY_PFAD = "/lookup/shellsByAssetLink";
 
+/** GET /shells kennen die Zielsysteme nicht, der Proxy bedient ihn selbst. */
+export const SHELLS_PFAD = "/shells";
+
+/** Die Registry haben die Zielsysteme ebenso wenig, der Proxy bedient sie selbst. */
+export const REGISTRY_PFAD = "/shell-descriptors";
+
+/** Die Submodel Registry ebenso. */
+export const SUBMODEL_REGISTRY_PFAD = "/submodel-descriptors";
+
 function maskieren(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

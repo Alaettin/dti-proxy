@@ -20,6 +20,10 @@ export interface Parameter {
   kennung?: boolean;
   hinweis?: string;
   vorgabe?: string;
+  /** Jeder Listenwert ist eine globalAssetId und geht als base64url-kodierte SpecificAssetId hinaus. */
+  alsAssetId?: boolean;
+  /** Ein Query-Wert, der base64url-kodiert hinausgeht, etwa assetType. */
+  alsBase64?: boolean;
 }
 
 export interface Aufruf {
@@ -42,6 +46,9 @@ export interface Aufruf {
  * aber nicht das Beispiel, weil sie schon das Ergebnis wäre.
  */
 const BEISPIEL_GLOBAL_ASSET_ID = "https://viewer-rc.test.dti.neoception.dev/VNDP77EV202504291";
+
+/** Die Kennung eines Teilmodells, so wie die Schalen auf rc darauf verweisen. */
+const BEISPIEL_SM_ID = "https://viewer-rc.test.dti.neoception.dev/at/sm/CompanyData?itemId=VNDP77EV202504291";
 
 /** Die Kennung einer Verwaltungsschale, also die Ausgabe von Discovery. */
 const BEISPIEL_AAS_ID = "https://viewer-rc.test.dti.neoception.dev/aas?itemId=VNDP77EV202504291";
@@ -77,6 +84,26 @@ const EXTENT: Parameter = {
 };
 
 export const AUFRUFE: Aufruf[] = [
+  {
+    id: "shells",
+    gruppe: "AssetAdministrationShellRepository",
+    methode: "GET",
+    vorlage: "/shells",
+    beschreibung:
+      "Alle Verwaltungsschalen zu den gepflegten Item-IDs. Das Zielsystem kennt den Aufruf nicht, der Proxy holt jede Schale einzeln und puffert sie.",
+    parameter: [
+      {
+        name: "assetIds",
+        titel: "assetIds",
+        ort: "query",
+        art: "liste",
+        alsAssetId: true,
+        hinweis: "globalAssetIds, mehrere durch Komma trennen. Mit dem Schalter darunter werden sie als SpecificAssetId kodiert.",
+      },
+      { name: "limit", titel: "limit", ort: "query", art: "text", hinweis: "Höchstzahl der Schalen auf dieser Seite, ohne Angabe 100." },
+      { name: "cursor", titel: "cursor", ort: "query", art: "text", hinweis: "Wert aus paging_metadata der vorigen Antwort." },
+    ],
+  },
   {
     id: "shell",
     gruppe: "AssetAdministrationShellRepository",
@@ -216,7 +243,77 @@ export const AUFRUFE: Aufruf[] = [
     ],
     koerperVorgabe: JSON.stringify([{ name: "globalAssetId", value: BEISPIEL_GLOBAL_ASSET_ID }], null, 2),
   },
+  {
+    id: "shell-descriptors",
+    gruppe: "AssetAdministrationShellRegistry",
+    methode: "GET",
+    vorlage: "/shell-descriptors",
+    beschreibung:
+      "Die Descriptoren aller Verwaltungsschalen aus den gepflegten Item-IDs. Ihre Endpunkte zeigen auf diesen Proxy.",
+    parameter: [
+      { name: "limit", titel: "limit", ort: "query", art: "text", hinweis: "Höchstzahl der Descriptoren, ohne Angabe 100." },
+      { name: "cursor", titel: "cursor", ort: "query", art: "text", hinweis: "Wert aus paging_metadata der vorigen Antwort." },
+      {
+        name: "assetKind",
+        titel: "assetKind",
+        ort: "query",
+        art: "auswahl",
+        werte: ["Instance", "Type", "Role", "NotApplicable"],
+        hinweis: "Nur Assets dieser Art.",
+      },
+      {
+        name: "assetType",
+        titel: "assetType",
+        ort: "query",
+        art: "text",
+        alsBase64: true,
+        hinweis: "Im Klartext eingeben, das Kodieren übernimmt der Schalter darunter.",
+      },
+    ],
+  },
+  {
+    id: "shell-descriptor",
+    gruppe: "AssetAdministrationShellRegistry",
+    methode: "GET",
+    vorlage: "/shell-descriptors/{aasIdentifier}",
+    beschreibung: "Der Descriptor einer Verwaltungsschale, nur wenn ihre itemID gepflegt ist.",
+    parameter: [kennung("aasIdentifier", "aasIdentifier")],
+  },
+  {
+    id: "submodel-descriptors",
+    gruppe: "SubmodelRegistry",
+    methode: "GET",
+    vorlage: "/submodel-descriptors",
+    beschreibung:
+      "Die Descriptoren aller Teilmodelle, auf die die Schalen der gepflegten Item-IDs verweisen. Ihre Endpunkte zeigen auf diesen Proxy.",
+    parameter: [
+      { name: "limit", titel: "limit", ort: "query", art: "text", hinweis: "Höchstzahl der Descriptoren, ohne Angabe 100." },
+      { name: "cursor", titel: "cursor", ort: "query", art: "text", hinweis: "Wert aus paging_metadata der vorigen Antwort." },
+    ],
+  },
+  {
+    id: "submodel-descriptor",
+    gruppe: "SubmodelRegistry",
+    methode: "GET",
+    vorlage: "/submodel-descriptors/{submodelIdentifier}",
+    beschreibung: "Der Descriptor eines Teilmodells, nur wenn eine gepflegte Schale darauf verweist.",
+    parameter: [{ ...kennung("submodelIdentifier", "submodelIdentifier"), vorgabe: BEISPIEL_SM_ID }],
+  },
 ];
+
+/** Die Aufrufe, die ein Proxy tatsächlich anbietet: GET /shells und die Registries nur, wenn eingeschaltet. */
+export function aufrufeFuer(proxy: {
+  shellsAktiv: boolean;
+  registryAktiv: boolean;
+  submodelRegistryAktiv: boolean;
+}): Aufruf[] {
+  return AUFRUFE.filter((aufruf) => {
+    if (aufruf.id === "shells") return proxy.shellsAktiv;
+    if (aufruf.gruppe === "AssetAdministrationShellRegistry") return proxy.registryAktiv;
+    if (aufruf.gruppe === "SubmodelRegistry") return proxy.submodelRegistryAktiv;
+    return true;
+  });
+}
 
 /** Kennungen wandern base64url-kodiert in den Pfad, ohne Auffüllzeichen. */
 export function base64url(text: string): string {
@@ -224,6 +321,11 @@ export function base64url(text: string): string {
   let roh = "";
   for (const byte of bytes) roh += String.fromCharCode(byte);
   return btoa(roh).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** Eine globalAssetId als SpecificAssetId, so wie GET /shells sie in assetIds erwartet. */
+export function assetIdKodieren(globalAssetId: string): string {
+  return base64url(JSON.stringify({ name: "globalAssetId", value: globalAssetId }));
 }
 
 function pfadwert(roh: string, istKennung: boolean, kodieren: boolean): string {
@@ -257,11 +359,11 @@ export function urlBauen(
     if (roh === "") continue;
     if (parameter.art === "liste") {
       for (const teil of roh.split(",").map((t) => t.trim()).filter((t) => t !== "")) {
-        anfrage.append(parameter.name, teil);
+        anfrage.append(parameter.name, parameter.alsAssetId && kodieren ? assetIdKodieren(teil) : teil);
       }
       continue;
     }
-    anfrage.append(parameter.name, roh);
+    anfrage.append(parameter.name, parameter.alsBase64 && kodieren ? base64url(roh) : roh);
   }
 
   const angehaengt = anfrage.toString();

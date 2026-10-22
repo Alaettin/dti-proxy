@@ -6,6 +6,8 @@ import { datenbankOeffnen, type Datenbank } from "../src/db.js";
 import { Einstellungen } from "../src/einstellungen.js";
 import type { Uhr } from "../src/fehler.js";
 import { Proxys } from "../src/proxys.js";
+import { Erneuerer } from "../src/erneuerung.js";
+import { SchalenPuffer } from "../src/puffer.js";
 
 /** Feste Uhr, damit Zeitstempel in Zusicherungen nicht mit der Zeit umfallen. */
 export const FESTE_ZEIT = "2026-09-18T09:12:44.000Z";
@@ -31,12 +33,16 @@ export interface Pruefstand {
   proxys: Proxys;
   db: Datenbank;
   aufrufe: Aufruf[];
+  puffer: SchalenPuffer;
+  /** Ohne Takt: Pruefungen stossen selbst an und warten auf das Promise. */
+  erneuerer: Erneuerer;
   schliessen: () => void;
 }
 
 export function pruefstand(
   antwort: (aufruf: Aufruf) => Response | Promise<Response> = () => new Response("{}", { status: 200 }),
-  optionen: { webVerzeichnis?: string | null } = {},
+  /** `jetzt` stellt die Uhr von Puffer und Erneuerer, damit sich Stunden ohne Warten pruefen lassen. */
+  optionen: { webVerzeichnis?: string | null; jetzt?: () => number } = {},
 ): Pruefstand {
   const db = datenbankOeffnen(":memory:");
   const einstellungen = new Einstellungen(db);
@@ -79,6 +85,10 @@ export function pruefstand(
     ]);
   };
 
+  const jetzt = optionen.jetzt ?? Date.now;
+  const puffer = new SchalenPuffer(jetzt);
+  const erneuerer = new Erneuerer({ proxys, puffer, holen, jetzt });
+
   return {
     app: appAnlegen({
       einstellungen,
@@ -91,11 +101,15 @@ export function pruefstand(
       // sicher bewusst nicht gesetzt: geprueft werden soll die Ableitung aus
       // der Verbindung, nicht ein im Pruefstand festgenagelter Wert.
       webVerzeichnis: optionen.webVerzeichnis ?? null,
+      puffer,
+      erneuerer,
     }),
     einstellungen,
     proxys,
     db,
     aufrufe,
+    puffer,
+    erneuerer,
     schliessen: () => db.close(),
   };
 }

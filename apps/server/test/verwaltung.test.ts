@@ -291,3 +291,138 @@ describe("Verbindungspruefung", () => {
     expect(String(antwort.koerper.fehler)).toContain("ECONNREFUSED");
   });
 });
+
+describe("Item-IDs und Puffer in der Verwaltung", () => {
+  const ITEMS = `/admin/api/proxys/${PRUEF_KENNUNG}/items`;
+
+  it("verlangt eine Sitzung", async () => {
+    stand = pruefstand();
+    expect((await json(ITEMS)).status).toBe(401);
+    expect((await json(ITEMS, { methode: "PUT", koerper: { itemIds: ["A"] } })).status).toBe(401);
+    expect((await json(`/admin/api/proxys/${PRUEF_KENNUNG}/erneuerung`, { methode: "POST" })).status).toBe(401);
+  });
+
+  it("speichert die Liste und liest sie wieder", async () => {
+    stand = pruefstand();
+    const cookie = await anmelden();
+    const gesetzt = await json(ITEMS, { methode: "PUT", koerper: { itemIds: ["B", " A ", "B"] }, cookie });
+    expect(gesetzt.status).toBe(200);
+    expect(gesetzt.koerper).toEqual({ itemIds: ["B", "A"] });
+    expect((await json(ITEMS, { cookie })).koerper).toEqual({ itemIds: ["B", "A"] });
+  });
+
+  it("weist eine falsche Eingabe mit 400 ab und kennt unbekannte Proxys nicht", async () => {
+    stand = pruefstand();
+    const cookie = await anmelden();
+    expect((await json(ITEMS, { methode: "PUT", koerper: { itemIds: "A" }, cookie })).status).toBe(400);
+    expect((await json("/admin/api/proxys/gibtsnicht/items", { cookie })).status).toBe(404);
+    expect((await json("/admin/api/proxys/gibtsnicht/puffer", { methode: "DELETE", cookie })).status).toBe(404);
+  });
+
+  it("nimmt eine lange Liste an", async () => {
+    stand = pruefstand();
+    const cookie = await anmelden();
+    const lang = Array.from({ length: 10_000 }, (_, nummer) => `VNDP77EV2025042${String(nummer).padStart(5, "0")}`);
+    const gesetzt = await json(ITEMS, { methode: "PUT", koerper: { itemIds: lang }, cookie });
+    expect(gesetzt.status).toBe(200);
+    expect((gesetzt.koerper.itemIds as string[]).length).toBe(10_000);
+  });
+
+  it("erneuert im Hintergrund, meldet den Stand und reagiert auf Aenderungen", async () => {
+    const jetzt = Date.parse("2026-10-22T10:00:00.000Z");
+    // Mit der Sperre laesst sich eine Erneuerung mittendrin anhalten.
+    let sperre: Promise<void> | null = null;
+    stand = pruefstand(
+      async () => {
+        if (sperre !== null) await sperre;
+        return Response.json({ id: "x" });
+      },
+      { jetzt: () => jetzt },
+    );
+    const cookie = await anmelden();
+
+    async function proxyStand(): Promise<{
+      pufferEintraege: number;
+      erneuertAm: string | null;
+      naechsteErneuerung: string | null;
+      erneuerungLaeuft: boolean;
+    }> {
+      const liste = (await json("/admin/api/proxys", { cookie })).koerper.proxys as never[];
+      return liste[0]!;
+    }
+    const PROXY = `/admin/api/proxys/${PRUEF_KENNUNG}`;
+
+    // Einschalten und Item-IDs speichern stoesst jeweils eine Erneuerung an.
+    await json(PROXY, { methode: "PUT", koerper: { shellsAktiv: true }, cookie });
+    await json(ITEMS, { methode: "PUT", koerper: { itemIds: ["A", "B"] }, cookie });
+    await stand.erneuerer.abgeschlossen();
+    expect(stand.aufrufe).toHaveLength(2);
+    expect(await proxyStand()).toEqual(
+      expect.objectContaining({
+        pufferEintraege: 2,
+        erneuertAm: "2026-10-22T10:00:00.000Z",
+        naechsteErneuerung: "2026-10-23T10:00:00.000Z",
+        erneuerungLaeuft: false,
+      }),
+    );
+
+    // Aus dem Bestand, ohne Aufruf oben.
+    await roheAnfrage(stand.app, `${PRUEF_BASIS}/shells`);
+    expect(stand.aufrufe).toHaveLength(2);
+
+    // Jetzt erneuern: antwortet sofort, holt alles neu.
+    expect((await json(`${PROXY}/erneuerung`, { methode: "POST", cookie })).status).toBe(202);
+    await stand.erneuerer.abgeschlossen();
+    expect(stand.aufrufe).toHaveLength(4);
+
+    // Nur der Name: keine Erneuerung.
+    await json(PROXY, { methode: "PUT", koerper: { name: "Anders" }, cookie });
+    await stand.erneuerer.abgeschlossen();
+    expect(stand.aufrufe).toHaveLength(4);
+
+    // Andere Basis: der alte Bestand ist sofort weg, dann neu gefuellt.
+    let freigeben: () => void = () => {};
+    sperre = new Promise<void>((fertig) => (freigeben = fertig));
+    await json(PROXY, { methode: "PUT", koerper: { upstreamBasis: "https://anders.beispiel.test" }, cookie });
+    expect(await proxyStand()).toEqual(expect.objectContaining({ pufferEintraege: 0, erneuerungLaeuft: true }));
+    freigeben();
+    sperre = null;
+    await stand.erneuerer.abgeschlossen();
+    expect((await proxyStand()).pufferEintraege).toBe(2);
+    expect(stand.aufrufe.slice(-2).every((aufruf) => aufruf.url.startsWith("https://anders.beispiel.test/"))).toBe(
+      true,
+    );
+
+    // Andere Dauer: neu geplant.
+    await json(PROXY, { methode: "PUT", koerper: { pufferStunden: 48 }, cookie });
+    await stand.erneuerer.abgeschlossen();
+    expect((await proxyStand()).naechsteErneuerung).toBe("2026-10-24T10:00:00.000Z");
+
+    // Alles aus: Bestand und Plan weg, Erneuern abgelehnt.
+    await json(PROXY, { methode: "PUT", koerper: { shellsAktiv: false }, cookie });
+    await stand.erneuerer.abgeschlossen();
+    expect(await proxyStand()).toEqual(
+      expect.objectContaining({ pufferEintraege: 0, naechsteErneuerung: null, erneuertAm: null }),
+    );
+    expect((await json(`${PROXY}/erneuerung`, { methode: "POST", cookie })).status).toBe(409);
+    expect((await json("/admin/api/proxys/gibtsnicht/erneuerung", { methode: "POST", cookie })).status).toBe(404);
+  });
+
+  it("nimmt den Schalter als Formularwert an und meldet ihn zurueck", async () => {
+    stand = pruefstand();
+    const cookie = await anmelden();
+    const an = await json(`/admin/api/proxys/${PRUEF_KENNUNG}`, {
+      methode: "PUT",
+      koerper: { shellsAktiv: "true", pufferStunden: "12" },
+      cookie,
+    });
+    expect(an.status).toBe(200);
+    expect(an.koerper.proxy).toMatchObject({ shellsAktiv: true, pufferStunden: 12 });
+    const falsch = await json(`/admin/api/proxys/${PRUEF_KENNUNG}`, {
+      methode: "PUT",
+      koerper: { shellsAktiv: "vielleicht" },
+      cookie,
+    });
+    expect(falsch.status).toBe(400);
+  });
+});

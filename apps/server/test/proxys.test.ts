@@ -5,7 +5,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { basisUrl, zustaendigFuer } from "../src/aufloesung.js";
 import { datenbankOeffnen, type Datenbank } from "../src/db.js";
-import { kennungAus, kennungPruefen, Proxys } from "../src/proxys.js";
+import { ITEM_LAENGE_MAX, ITEMS_MAX, kennungAus, kennungPruefen, Proxys } from "../src/proxys.js";
 
 let db: Datenbank | undefined;
 const verzeichnisse: string[] = [];
@@ -117,6 +117,194 @@ describe("Wanderung vom Zwischenstand mit Standard", () => {
     const alle = new Proxys(db).alle();
     expect(alle.map((p) => p.kennung)).toEqual(["eins", "zwei"]);
     expect(alle[0]!.upstreamBasis).toBe("https://eins.test");
+  });
+});
+
+describe("Wanderung auf Puffer und Item-IDs", () => {
+  // Der Stand vor GET /shells: proxys ohne pufferStunden und shellsAktiv, keine Tabelle items.
+  it("ergaenzt die Spalten mit den Vorgaben und legt die Tabelle an", () => {
+    const datei = dateiPfad();
+    const alt = new Database(datei);
+    alt.exec(`
+      CREATE TABLE einstellungen (schluessel TEXT PRIMARY KEY, wert TEXT NOT NULL);
+      CREATE TABLE proxys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, kennung TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+        upstreamBasis TEXT NOT NULL, aasBasis TEXT NOT NULL, zeitlimitMs INTEGER NOT NULL,
+        angelegtAm TEXT NOT NULL);
+    `);
+    alt
+      .prepare(
+        "INSERT INTO proxys (kennung, name, upstreamBasis, aasBasis, zeitlimitMs, angelegtAm) VALUES (?,?,?,?,?,?)",
+      )
+      .run("pf", "P+F", "https://pf.test", "https://viewer-pf.test", 30000, "2026-09-24T00:00:00.000Z");
+    alt.close();
+
+    db = datenbankOeffnen(datei);
+    const proxys = new Proxys(db);
+    expect(proxys.nachKennung("pf")!.pufferStunden).toBe(24);
+    // Ein bestehender Proxy bietet GET /shells erst an, wenn ihn jemand einschaltet.
+    expect(proxys.nachKennung("pf")!.shellsAktiv).toBe(false);
+    expect(proxys.nachKennung("pf")!.registryAktiv).toBe(false);
+    expect(proxys.nachKennung("pf")!.submodelRegistryAktiv).toBe(false);
+    expect(proxys.itemIdsSetzen("pf", ["A"])).toEqual({ itemIds: ["A"] });
+    db.close();
+
+    // Zweites Oeffnen: nichts doppelt, nichts verloren.
+    db = datenbankOeffnen(datei);
+    expect(new Proxys(db).itemIds("pf")).toEqual(["A"]);
+  });
+});
+
+describe("Pufferdauer", () => {
+  it("hat die Vorgabe 24 Stunden und nimmt 0 bis 720", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    expect(proxys.nachKennung("eins")!.pufferStunden).toBe(24);
+    for (const gut of [0, 1, 720, "48"]) {
+      const ergebnis = proxys.aendern("eins", { pufferStunden: gut });
+      expect(ergebnis, String(gut)).toHaveProperty("proxy");
+    }
+    expect(proxys.nachKennung("eins")!.pufferStunden).toBe(48);
+  });
+
+  it("weist alles andere ab", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    for (const schlecht of [-1, 721, 1.5, "", "x"]) {
+      const ergebnis = proxys.aendern("eins", { pufferStunden: schlecht });
+      expect(ergebnis, String(schlecht)).toHaveProperty("verstoesse");
+    }
+    expect(proxys.nachKennung("eins")!.pufferStunden).toBe(24);
+  });
+});
+
+describe("Schalter fuer GET /shells", () => {
+  it("ist ab Werk aus und laesst sich ein- und ausschalten", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    expect(proxys.nachKennung("eins")!.shellsAktiv).toBe(false);
+    proxys.aendern("eins", { shellsAktiv: true });
+    expect(proxys.nachKennung("eins")!.shellsAktiv).toBe(true);
+    expect(proxys.alle()[0]!.shellsAktiv).toBe(true);
+    proxys.aendern("eins", { shellsAktiv: "false" });
+    expect(proxys.nachKennung("eins")!.shellsAktiv).toBe(false);
+    proxys.aendern("eins", { shellsAktiv: "true" });
+    expect(proxys.nachKennung("eins")!.shellsAktiv).toBe(true);
+  });
+
+  it("bleibt stehen, wenn ein anderes Feld geaendert wird", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    proxys.aendern("eins", { shellsAktiv: true });
+    proxys.aendern("eins", { name: "Anders" });
+    expect(proxys.nachKennung("eins")!.shellsAktiv).toBe(true);
+  });
+
+  it("weist andere Werte ab", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    for (const schlecht of ["ja", "1", ""]) {
+      expect(proxys.aendern("eins", { shellsAktiv: schlecht }), schlecht).toHaveProperty("verstoesse");
+    }
+  });
+});
+
+describe("Schalter fuer die Registry", () => {
+  it("ist ab Werk aus und unabhaengig von GET /shells", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    expect(proxys.nachKennung("eins")!.registryAktiv).toBe(false);
+    proxys.aendern("eins", { registryAktiv: "true" });
+    expect(proxys.nachKennung("eins")).toMatchObject({ registryAktiv: true, shellsAktiv: false });
+    proxys.aendern("eins", { shellsAktiv: true, registryAktiv: false });
+    expect(proxys.nachKennung("eins")).toMatchObject({ registryAktiv: false, shellsAktiv: true });
+    expect(proxys.alle()[0]!.registryAktiv).toBe(false);
+  });
+
+  it("hat fuer die Submodel Registry einen eigenen, dritten Schalter", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    expect(proxys.nachKennung("eins")!.submodelRegistryAktiv).toBe(false);
+    proxys.aendern("eins", { submodelRegistryAktiv: "true" });
+    expect(proxys.nachKennung("eins")).toMatchObject({
+      submodelRegistryAktiv: true,
+      registryAktiv: false,
+      shellsAktiv: false,
+    });
+    expect(proxys.alle()[0]!.submodelRegistryAktiv).toBe(true);
+    const falsch = proxys.aendern("eins", { submodelRegistryAktiv: "ja" });
+    expect(falsch).toMatchObject({ verstoesse: [{ feld: "submodelRegistryAktiv" }] });
+    expect(JSON.stringify(falsch)).toContain("Submodel Registry");
+  });
+
+  it("weist andere Werte ab und nennt die Registry", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    const ergebnis = proxys.aendern("eins", { registryAktiv: "ja" });
+    expect(ergebnis).toMatchObject({ verstoesse: [{ feld: "registryAktiv" }] });
+    expect(JSON.stringify(ergebnis)).toContain("Registry");
+  });
+});
+
+describe("Item-IDs", () => {
+  it("trimmt, verwirft Leere und Doppelte, die erste Stelle gilt", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    expect(proxys.itemIdsSetzen("eins", [" B ", "", "A", "B", "  ", "C"])).toEqual({ itemIds: ["B", "A", "C"] });
+    expect(proxys.itemIds("eins")).toEqual(["B", "A", "C"]);
+  });
+
+  it("ersetzt die ganze Liste", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    proxys.itemIdsSetzen("eins", ["A", "B"]);
+    proxys.itemIdsSetzen("eins", ["C"]);
+    expect(proxys.itemIds("eins")).toEqual(["C"]);
+  });
+
+  it("haelt die Listen der Proxys auseinander", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    anlegen(proxys, "zwei");
+    proxys.itemIdsSetzen("eins", ["A"]);
+    proxys.itemIdsSetzen("zwei", ["B"]);
+    expect(proxys.itemIds("eins")).toEqual(["A"]);
+    expect(proxys.itemIds("zwei")).toEqual(["B"]);
+  });
+
+  it("weist falsche Eingaben und Ueberlaenge ab und laesst die Liste stehen", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    proxys.itemIdsSetzen("eins", ["A"]);
+    for (const schlecht of [undefined, "A", [1], ["x".repeat(ITEM_LAENGE_MAX + 1)]]) {
+      expect(proxys.itemIdsSetzen("eins", schlecht), JSON.stringify(schlecht)?.slice(0, 20)).toHaveProperty("fehler");
+    }
+    const zuViele = Array.from({ length: ITEMS_MAX + 1 }, (_, nummer) => String(nummer));
+    expect(proxys.itemIdsSetzen("eins", zuViele)).toHaveProperty("fehler");
+    expect(proxys.itemIds("eins")).toEqual(["A"]);
+  });
+
+  it("behaelt die Liste, wenn sich die Kennung aendert", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    proxys.itemIdsSetzen("eins", ["A"]);
+    proxys.aendern("eins", { kennung: "neu" });
+    expect(proxys.itemIds("neu")).toEqual(["A"]);
+  });
+
+  it("nimmt die Liste beim Loeschen mit", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    proxys.itemIdsSetzen("eins", ["A"]);
+    proxys.loeschen("eins");
+    const uebrig = db!.prepare("SELECT COUNT(*) AS zahl FROM items").get() as { zahl: number };
+    expect(uebrig.zahl).toBe(0);
+  });
+
+  it("kennt einen unbekannten Proxy nicht", () => {
+    const proxys = frisch();
+    expect(proxys.itemIds("gibtsnicht")).toBeNull();
+    expect(proxys.itemIdsSetzen("gibtsnicht", ["A"])).toBeNull();
   });
 });
 

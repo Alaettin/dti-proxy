@@ -32,7 +32,7 @@ const ANTWORT_AUS = new Set([
   "content-length",
 ]);
 
-function anfrageKopfzeilen(req: Request): Headers {
+export function anfrageKopfzeilen(req: Request): Headers {
   const kopfzeilen = new Headers();
   for (const [name, wert] of Object.entries(req.headers)) {
     if (wert === undefined || ANFRAGE_AUS.has(name.toLowerCase())) continue;

@@ -2,8 +2,10 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import { basisUrl } from "../aufloesung.js";
 import type { Einstellungen, Schluessel } from "../einstellungen.js";
 import { VORGABEN } from "../einstellungen.js";
+import { Erneuerer, melden } from "../erneuerung.js";
 import type { Proxy, Proxys } from "../proxys.js";
-import { kennungAus } from "../proxys.js";
+import { kennungAus, SCHALTER } from "../proxys.js";
+import type { SchalenPuffer } from "../puffer.js";
 import { gleich, sitzungLoeschen, sitzungPruefen, sitzungSetzen } from "../sitzung.js";
 import { dienstBasisAus } from "./swagger.js";
 
@@ -19,6 +21,8 @@ function wegKennung(req: Request): string {
 export interface VerwaltungOptionen {
   einstellungen: Einstellungen;
   proxys: Proxys;
+  puffer: SchalenPuffer;
+  erneuerer: Erneuerer;
   holen?: typeof fetch;
   benutzer: string;
   passwort: string;
@@ -35,6 +39,8 @@ export interface VerwaltungOptionen {
 export function verwaltungRouter({
   einstellungen,
   proxys,
+  puffer,
+  erneuerer,
   holen = fetch,
   benutzer,
   passwort,
@@ -52,12 +58,23 @@ export function verwaltungRouter({
     next();
   }
 
-  /** Was die Oberflaeche je Proxy braucht, inklusive der fertigen Basis-URL. */
-  function anzeigen(req: Request, proxy: Proxy): Proxy & { basisUrl: string; basisPfad: string } {
+  /** Ein Zeitpunkt als ISO-Text fuer die Oberflaeche, ohne Wert null. */
+  function zeitpunkt(ms: number | null): string | null {
+    return ms === null ? null : new Date(ms).toISOString();
+  }
+
+  /** Was die Oberflaeche je Proxy braucht, inklusive der fertigen Basis-URL und des Pufferstands. */
+  function anzeigen(req: Request, proxy: Proxy): Proxy & Record<string, unknown> {
+    const id = proxys.idVon(proxy.kennung);
+    const stand = id === null ? null : erneuerer.stand(id);
     return {
       ...proxy,
       basisUrl: basisUrl(dienstBasisAus(req, einstellungen), proxy),
       basisPfad: `/p/${proxy.kennung}`,
+      pufferEintraege: id === null ? 0 : puffer.anzahl(id),
+      erneuertAm: zeitpunkt(stand?.erneuertAm ?? null),
+      naechsteErneuerung: zeitpunkt(stand?.naechsteErneuerung ?? null),
+      erneuerungLaeuft: stand?.laeuft ?? false,
     };
   }
 
@@ -143,6 +160,7 @@ export function verwaltungRouter({
   });
 
   router.put("/proxys/:kennung", schutz, (req, res) => {
+    const vorher = proxys.nachKennung(wegKennung(req));
     const ergebnis = proxys.aendern(wegKennung(req), (req.body ?? {}) as Record<string, string>);
     if (ergebnis === null) {
       res.status(404).json({ fehler: "Diesen Proxy gibt es nicht." });
@@ -152,16 +170,71 @@ export function verwaltungRouter({
       res.status(400).json({ fehler: "Die Eingabe ist nicht gültig.", verstoesse: ergebnis.verstoesse });
       return;
     }
-    res.json({ proxy: anzeigen(req, ergebnis.proxy) });
+    // Andere Basis: der Bestand stammt von einem anderen Ziel und geht sofort
+    // weg. Andere Dauer oder umgeschaltet: neu planen und gleich erneuern.
+    const neu = ergebnis.proxy;
+    if (vorher !== null) {
+      const andereBasis = vorher.upstreamBasis !== neu.upstreamBasis || vorher.aasBasis !== neu.aasBasis;
+      const andererPlan =
+        vorher.pufferStunden !== neu.pufferStunden || SCHALTER.some((schalter) => vorher[schalter] !== neu[schalter]);
+      if (andereBasis || andererPlan) erneuerer.anstossen(neu.kennung, { verwerfen: andereBasis }).catch(melden);
+    }
+    res.json({ proxy: anzeigen(req, neu) });
   });
 
   router.delete("/proxys/:kennung", schutz, (req, res) => {
+    const id = proxys.idVon(wegKennung(req));
     const fehler = proxys.loeschen(wegKennung(req));
     if (fehler !== null) {
       res.status(400).json(fehler);
       return;
     }
+    if (id !== null) erneuerer.vergessen(id);
     res.json({ proxys: proxys.alle().map((proxy) => anzeigen(req, proxy)) });
+  });
+
+  // Die Item-IDs, aus denen GET /shells seine Liste bildet.
+
+  router.get("/proxys/:kennung/items", schutz, (req, res) => {
+    const itemIds = proxys.itemIds(wegKennung(req));
+    if (itemIds === null) {
+      res.status(404).json({ fehler: "Diesen Proxy gibt es nicht." });
+      return;
+    }
+    res.json({ itemIds });
+  });
+
+  router.put("/proxys/:kennung/items", schutz, (req, res) => {
+    const eingabe = req.body as { itemIds?: unknown } | undefined;
+    const ergebnis = proxys.itemIdsSetzen(wegKennung(req), eingabe?.itemIds);
+    if (ergebnis === null) {
+      res.status(404).json({ fehler: "Diesen Proxy gibt es nicht." });
+      return;
+    }
+    if ("fehler" in ergebnis) {
+      res.status(400).json(ergebnis);
+      return;
+    }
+    // Neue Liste, neuer Bestand: neue Items kommen dazu, entfernte fallen weg.
+    erneuerer.anstossen(wegKennung(req)).catch(melden);
+    res.json(ergebnis);
+  });
+
+  /** Stoesst die Erneuerung an und antwortet sofort; den Fortschritt zeigt GET /proxys. */
+  router.post("/proxys/:kennung/erneuerung", schutz, (req, res) => {
+    const proxy = proxys.nachKennung(wegKennung(req));
+    if (proxy === null) {
+      res.status(404).json({ fehler: "Diesen Proxy gibt es nicht." });
+      return;
+    }
+    if (!Erneuerer.beteiligt(proxy)) {
+      res.status(409).json({
+        fehler: "Erneuert wird nur, wenn der Puffer an ist und GET /shells oder eine Registry angeboten wird.",
+      });
+      return;
+    }
+    erneuerer.anstossen(proxy.kennung).catch(melden);
+    res.status(202).json({ proxy: anzeigen(req, proxy) });
   });
 
   /** Fragt /description beim Zielsystem eines Proxys ab und zeigt, was zurueckkommt. */
