@@ -146,6 +146,8 @@ describe("Wanderung auf Puffer und Item-IDs", () => {
     expect(proxys.nachKennung("pf")!.shellsAktiv).toBe(false);
     expect(proxys.nachKennung("pf")!.registryAktiv).toBe(false);
     expect(proxys.nachKennung("pf")!.submodelRegistryAktiv).toBe(false);
+    // Und reicht weiter byte-genau durch.
+    expect(proxys.nachKennung("pf")!.dateiPfadeAbsolut).toBe(false);
     expect(proxys.itemIdsSetzen("pf", ["A"])).toEqual({ itemIds: ["A"] });
     db.close();
 
@@ -243,6 +245,28 @@ describe("Schalter fuer die Registry", () => {
     const ergebnis = proxys.aendern("eins", { registryAktiv: "ja" });
     expect(ergebnis).toMatchObject({ verstoesse: [{ feld: "registryAktiv" }] });
     expect(JSON.stringify(ergebnis)).toContain("Registry");
+  });
+});
+
+describe("Schalter fuer absolute Dateipfade", () => {
+  it("ist ab Werk aus, laesst sich schalten und bleibt beim Aendern anderer Felder", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    expect(proxys.nachKennung("eins")!.dateiPfadeAbsolut).toBe(false);
+    proxys.aendern("eins", { dateiPfadeAbsolut: "true" });
+    expect(proxys.nachKennung("eins")).toMatchObject({ dateiPfadeAbsolut: true, shellsAktiv: false });
+    proxys.aendern("eins", { name: "Anders" });
+    expect(proxys.alle()[0]!.dateiPfadeAbsolut).toBe(true);
+    proxys.aendern("eins", { dateiPfadeAbsolut: false });
+    expect(proxys.nachKennung("eins")!.dateiPfadeAbsolut).toBe(false);
+  });
+
+  it("weist andere Werte ab", () => {
+    const proxys = frisch();
+    anlegen(proxys, "eins");
+    const ergebnis = proxys.aendern("eins", { dateiPfadeAbsolut: "ja" });
+    expect(ergebnis).toMatchObject({ verstoesse: [{ feld: "dateiPfadeAbsolut" }] });
+    expect(proxys.nachKennung("eins")!.dateiPfadeAbsolut).toBe(false);
   });
 });
 

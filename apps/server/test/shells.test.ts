@@ -253,6 +253,27 @@ describe("GET /shells", () => {
     expect(stand.aufrufe).toHaveLength(0);
   });
 
+  it("zeigt bei absoluten Dateipfaden das Vorschaubild auf den Proxy, ohne den Puffer anzufassen", async () => {
+    anlegen(["A"], (aufruf) =>
+      gefragteItemId(aufruf) === "A"
+        ? Response.json({ id: aasId("A"), idShort: "A", assetInformation: { defaultThumbnail: { path: "/bild.png" } } })
+        : new Response("{}", { status: 404 }),
+    );
+    stand!.einstellungen.schreiben({ proxyBasis: "https://dti-proxy.test" });
+    stand!.proxys.aendern(PRUEF_KENNUNG, { dateiPfadeAbsolut: true });
+    const bild = (antwort: Antwort): unknown =>
+      (antwort.koerper.result![0] as unknown as { assetInformation: { defaultThumbnail: { path: string } } })
+        .assetInformation.defaultThumbnail.path;
+
+    expect(bild(await shells())).toBe(
+      `https://dti-proxy.test${PRUEF_BASIS}/shells/${b64(aasId("A"))}/asset-information/thumbnail`,
+    );
+    // Wieder aus: dieselbe Schale aus dem Puffer traegt noch den Wert von oben.
+    stand!.proxys.aendern(PRUEF_KENNUNG, { dateiPfadeAbsolut: false });
+    expect(bild(await shells())).toBe("/bild.png");
+    expect(stand!.aufrufe).toHaveLength(1);
+  });
+
   it("laesst GET /shells/{id} weiter durch die Weiterleitung laufen", async () => {
     anlegen([], () => Response.json({ durchgereicht: true }));
     const antwort = await roheAnfrage(stand!.app, `${PRUEF_BASIS}/shells/${b64(aasId("A"))}`);

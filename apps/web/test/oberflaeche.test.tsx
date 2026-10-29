@@ -37,6 +37,7 @@ const ERSTER: ProxyAnsicht = {
   shellsAktiv: true,
   registryAktiv: true,
   submodelRegistryAktiv: true,
+  dateiPfadeAbsolut: true,
   erneuertAm: "2026-10-22T08:00:00.000Z",
   naechsteErneuerung: "2026-10-23T08:00:00.000Z",
   erneuerungLaeuft: false,
@@ -53,6 +54,7 @@ const ZWEITER: ProxyAnsicht = {
   upstreamBasis: "https://kunde-a.test",
   basisUrl: "https://dti-proxy.test/p/kunde-a",
   basisPfad: "/p/kunde-a",
+  dateiPfadeAbsolut: false,
 };
 
 const UEBERSICHT = renderToStaticMarkup(
@@ -266,6 +268,15 @@ describe("Proxyformular", () => {
     expect(nurSubmodel).toMatch(/checked=""[^>]*\/><span>Submodel Registry anbieten/);
   });
 
+  it("bietet einen eigenen Schalter fuer absolute Dateipfade an", () => {
+    expect(text(FORMULAR)).toContain("Dateipfade absolut ausgeben");
+    const nurPfade = renderToStaticMarkup(
+      <ProxyFormular werte={{ dateiPfadeAbsolut: "true" }} setzen={() => undefined} />,
+    );
+    expect(nurPfade.match(/type="checkbox"[^>]*checked/g)).toHaveLength(1);
+    expect(nurPfade).toMatch(/checked=""[^>]*\/><span>Dateipfade absolut ausgeben/);
+  });
+
   it("bietet einen eigenen Schalter fuer die Registry an", () => {
     expect(text(FORMULAR)).toContain("Registry anbieten");
     const nurRegistry = renderToStaticMarkup(<ProxyFormular werte={{ registryAktiv: "true" }} setzen={() => undefined} />);
@@ -291,6 +302,9 @@ describe("Reiter API und Schalter", () => {
     expect(text(UEBERSICHT)).toContain("GET /shells an");
     expect(text(UEBERSICHT)).toContain("· Registry an");
     expect(text(UEBERSICHT)).toContain("Submodel Registry an");
+    // Je Proxy: der erste schreibt um, der zweite nicht.
+    expect(text(UEBERSICHT)).toContain("Dateipfade absolut");
+    expect(text(UEBERSICHT)).toContain("Dateipfade relativ");
   });
 
   it("zeigt die Submodel Registry nur bei eingeschaltetem Proxy", () => {

@@ -11,7 +11,8 @@ export type ProxyFeld =
   | "pufferStunden"
   | "shellsAktiv"
   | "registryAktiv"
-  | "submodelRegistryAktiv";
+  | "submodelRegistryAktiv"
+  | "dateiPfadeAbsolut";
 
 /** Die drei Wege, die der Proxy selbst bedient und die sich je Proxy schalten lassen. */
 export const SCHALTER = ["shellsAktiv", "registryAktiv", "submodelRegistryAktiv"] as const;
@@ -42,11 +43,16 @@ export interface Proxy {
   registryAktiv: boolean;
   /** Ob dieser Proxy die Submodel Registry (GET /submodel-descriptors) anbietet. */
   submodelRegistryAktiv: boolean;
+  /**
+   * Ob relative Dateipfade in Antworten zu absoluten Adressen dieses Proxys
+   * werden (File-Werte auf /attachment, Vorschaubild auf /thumbnail).
+   */
+  dateiPfadeAbsolut: boolean;
   angelegtAm: string;
 }
 
 /** So liegt ein Proxy in der Tabelle: SQLite kennt kein boolean. */
-type ProxyZeile = Omit<Proxy, Schalter> & Record<Schalter, number>;
+type ProxyZeile = Omit<Proxy, Schalter | "dateiPfadeAbsolut"> & Record<Schalter | "dateiPfadeAbsolut", number>;
 
 function ausZeile(zeile: ProxyZeile): Proxy {
   return {
@@ -54,6 +60,7 @@ function ausZeile(zeile: ProxyZeile): Proxy {
     shellsAktiv: zeile.shellsAktiv === 1,
     registryAktiv: zeile.registryAktiv === 1,
     submodelRegistryAktiv: zeile.submodelRegistryAktiv === 1,
+    dateiPfadeAbsolut: zeile.dateiPfadeAbsolut === 1,
   };
 }
 
@@ -67,6 +74,7 @@ export interface ProxyEingabe {
   shellsAktiv?: string | boolean;
   registryAktiv?: string | boolean;
   submodelRegistryAktiv?: string | boolean;
+  dateiPfadeAbsolut?: string | boolean;
 }
 
 const KENNUNG_MUSTER = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
@@ -130,7 +138,7 @@ function schalterPruefen(roh: string | boolean, was: string): { wert: boolean } 
 
 const SPALTEN =
   "kennung, name, upstreamBasis, aasBasis, zeitlimitMs, pufferStunden, shellsAktiv, registryAktiv, " +
-  "submodelRegistryAktiv, angelegtAm";
+  "submodelRegistryAktiv, dateiPfadeAbsolut, angelegtAm";
 
 export class Proxys {
   #db: Datenbank;
@@ -208,6 +216,13 @@ export class Proxys {
       else schalter[feld] = geprueft.wert;
     }
 
+    let dateiPfadeAbsolut = bestand?.dateiPfadeAbsolut ?? PROXY_VORGABEN.dateiPfadeAbsolut;
+    if (eingabe.dateiPfadeAbsolut !== undefined) {
+      const geprueft = schalterPruefen(eingabe.dateiPfadeAbsolut, "Absolute Dateipfade");
+      if ("text" in geprueft) verstoesse.push({ feld: "dateiPfadeAbsolut", text: geprueft.text });
+      else dateiPfadeAbsolut = geprueft.wert;
+    }
+
     if (verstoesse.length > 0) return { verstoesse };
 
     const fremd = this.nachKennung(kennung);
@@ -224,6 +239,7 @@ export class Proxys {
         zeitlimitMs,
         pufferStunden,
         ...schalter,
+        dateiPfadeAbsolut,
         angelegtAm: bestand?.angelegtAm ?? new Date().toISOString(),
       },
     };
@@ -236,8 +252,8 @@ export class Proxys {
     this.#db
       .prepare(
         `INSERT INTO proxys (kennung, name, upstreamBasis, aasBasis, zeitlimitMs, pufferStunden, shellsAktiv,
-           registryAktiv, submodelRegistryAktiv, angelegtAm)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           registryAktiv, submodelRegistryAktiv, dateiPfadeAbsolut, angelegtAm)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         werte.kennung,
@@ -249,6 +265,7 @@ export class Proxys {
         werte.shellsAktiv ? 1 : 0,
         werte.registryAktiv ? 1 : 0,
         werte.submodelRegistryAktiv ? 1 : 0,
+        werte.dateiPfadeAbsolut ? 1 : 0,
         werte.angelegtAm,
       );
     return { proxy: werte };
@@ -263,7 +280,7 @@ export class Proxys {
     this.#db
       .prepare(
         `UPDATE proxys SET kennung = ?, name = ?, upstreamBasis = ?, aasBasis = ?, zeitlimitMs = ?, pufferStunden = ?,
-           shellsAktiv = ?, registryAktiv = ?, submodelRegistryAktiv = ?
+           shellsAktiv = ?, registryAktiv = ?, submodelRegistryAktiv = ?, dateiPfadeAbsolut = ?
          WHERE kennung = ?`,
       )
       .run(
@@ -276,6 +293,7 @@ export class Proxys {
         werte.shellsAktiv ? 1 : 0,
         werte.registryAktiv ? 1 : 0,
         werte.submodelRegistryAktiv ? 1 : 0,
+        werte.dateiPfadeAbsolut ? 1 : 0,
         kennung,
       );
     return { proxy: werte };

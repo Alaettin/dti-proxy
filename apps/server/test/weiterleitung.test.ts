@@ -127,3 +127,82 @@ describe("Weiterleitung", () => {
     expect(antwort.koerper).toContain("No route for");
   });
 });
+
+describe("Absolute Dateipfade", () => {
+  const DIENST = "https://dti-proxy.test";
+  const SM = "aHR0cHM6Ly90ZXN0L3NtL05hbWVwbGF0ZQ";
+  const TEILMODELL = {
+    idShort: "Nameplate",
+    modelType: "Submodel",
+    submodelElements: [{ idShort: "CompanyLogo", value: "/aasx/suppl/logo.png", modelType: "File" }],
+  };
+  const LOGO = `${DIENST}${PRUEF_BASIS}/submodels/${SM}/submodel-elements/CompanyLogo/attachment`;
+
+  function oben(koerper: string, kopfzeilen: Record<string, string> = {}, status = 200): Pruefstand {
+    const headers = { "content-type": "application/json", ...kopfzeilen };
+    stand = pruefstand(() => new Response(koerper, { status, headers }));
+    stand.einstellungen.schreiben({ proxyBasis: DIENST });
+    return stand;
+  }
+
+  function einschalten(): void {
+    stand!.proxys.aendern(PRUEF_KENNUNG, { dateiPfadeAbsolut: true });
+  }
+
+  it("reicht ab Werk byte-genau durch, auch Leerraum und ETag", async () => {
+    // Leerraum und Schluesselreihenfolge, die JSON.stringify nie so schreiben wuerde.
+    const roh = `{ "submodelElements" : [ {"value":"/aasx/suppl/logo.png","idShort":"CompanyLogo","modelType":"File"} ] }`;
+    oben(roh, { etag: '"abc"' });
+    const antwort = await roheAnfrage(stand!.app, `${PRUEF_BASIS}/submodels/${SM}`);
+    expect(antwort.koerper).toBe(roh);
+    expect(antwort.kopfzeilen.etag).toBe('"abc"');
+  });
+
+  it("zeigt eingeschaltet File-Werte auf /attachment des Proxys und laesst den ETag weg", async () => {
+    oben(JSON.stringify(TEILMODELL), { etag: '"abc"' });
+    einschalten();
+    const antwort = await roheAnfrage(stand!.app, `${PRUEF_BASIS}/submodels/${SM}?level=deep`);
+    expect(antwort.status).toBe(200);
+    expect(JSON.parse(antwort.koerper).submodelElements[0].value).toBe(LOGO);
+    expect(antwort.kopfzeilen["content-type"]).toBe("application/json");
+    expect(antwort.kopfzeilen.etag).toBeUndefined();
+    // Nach oben geht der Pfad weiter unveraendert.
+    expect(stand!.aufrufe[0]!.url).toBe(`https://oben.beispiel.test/submodels/${SM}?level=deep`);
+  });
+
+  it("nimmt ohne gesetzte Basis die Adresse der Anfrage", async () => {
+    stand = pruefstand(() => Response.json(TEILMODELL));
+    einschalten();
+    const antwort = await roheAnfrage(stand.app, `${PRUEF_BASIS}/submodels/${SM}`, {
+      kopfzeilen: { host: "proxy.lab.test", "x-forwarded-proto": "https" },
+    });
+    expect(JSON.parse(antwort.koerper).submodelElements[0].value).toBe(
+      `https://proxy.lab.test${PRUEF_BASIS}/submodels/${SM}/submodel-elements/CompanyLogo/attachment`,
+    );
+  });
+
+  it("laesst eingeschaltet Fehler, Nicht-JSON, kaputtes JSON, HEAD und andere Pfade unberuehrt", async () => {
+    const roh = JSON.stringify(TEILMODELL);
+    const faelle: { koerper: string; status?: number; art?: string; pfad?: string; methode?: string }[] = [
+      { koerper: roh, status: 404 },
+      { koerper: roh, art: "text/plain" },
+      { koerper: "{kaputt" },
+      { koerper: roh, pfad: "/description" },
+      { koerper: roh, pfad: `/submodels/${SM}/submodel-elements/CompanyLogo/attachment` },
+    ];
+    for (const fall of faelle) {
+      stand?.schliessen();
+      oben(fall.koerper, fall.art ? { "content-type": fall.art } : {}, fall.status);
+      einschalten();
+      const antwort = await roheAnfrage(stand!.app, PRUEF_BASIS + (fall.pfad ?? `/submodels/${SM}`));
+      expect(antwort.koerper, JSON.stringify(fall)).toBe(fall.koerper);
+    }
+
+    stand?.schliessen();
+    oben(roh);
+    einschalten();
+    const kopf = await roheAnfrage(stand!.app, `${PRUEF_BASIS}/submodels/${SM}`, { methode: "HEAD" });
+    expect(kopf.status).toBe(200);
+    expect(kopf.koerper).toBe("");
+  });
+});

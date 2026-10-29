@@ -61,8 +61,8 @@ export function appAnlegen({
 
   // Ganz vorn und vor jedem Body-Parser: die Weiterleitung soll die Anfrage
   // sehen, wie sie hereinkam.
-  app.use(weiterleitung({ proxys, holen, uhr }));
-  app.use(shells({ proxys, puffer, holen, uhr }));
+  app.use(weiterleitung({ proxys, einstellungen, holen, uhr }));
+  app.use(shells({ proxys, puffer, einstellungen, holen, uhr }));
   app.use(registry({ proxys, puffer, einstellungen, holen, uhr }));
   app.use(submodelRegistry({ proxys, puffer, einstellungen, holen, uhr }));
 

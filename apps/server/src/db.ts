@@ -14,6 +14,7 @@ export const PROXY_VORGABEN = {
   shellsAktiv: false,
   registryAktiv: false,
   submodelRegistryAktiv: false,
+  dateiPfadeAbsolut: false,
 } as const;
 
 function spalten(db: Datenbank, tabelle: string): string[] {
@@ -90,6 +91,14 @@ function shellsSpaltenErgaenzen(db: Datenbank): void {
     db.exec(
       `ALTER TABLE proxys ADD COLUMN submodelRegistryAktiv INTEGER NOT NULL DEFAULT ${
         PROXY_VORGABEN.submodelRegistryAktiv ? 1 : 0
+      }`,
+    );
+  }
+  // Ab Werk aus: bestehende Proxys reichen weiter byte-genau durch.
+  if (!vorhanden.includes("dateiPfadeAbsolut")) {
+    db.exec(
+      `ALTER TABLE proxys ADD COLUMN dateiPfadeAbsolut INTEGER NOT NULL DEFAULT ${
+        PROXY_VORGABEN.dateiPfadeAbsolut ? 1 : 0
       }`,
     );
   }

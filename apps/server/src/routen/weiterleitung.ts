@@ -2,9 +2,12 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { zustaendigFuer } from "../aufloesung.js";
+import { antwortUmschreiben, umschreibbar } from "../dateipfade.js";
+import type { Einstellungen } from "../einstellungen.js";
 import { ergebnis, type Uhr, echteUhr } from "../fehler.js";
 import { AAS_MUSTER } from "../pfade.js";
 import type { Proxys } from "../proxys.js";
+import { proxyBasisAus } from "./swagger.js";
 
 /**
  * Kopfzeilen, die zur einzelnen Verbindung gehoeren und deshalb nicht weiter
@@ -54,6 +57,8 @@ function antwortKopfzeilenSetzen(antwort: Response, oben: globalThis.Response): 
 
 export interface WeiterleitungOptionen {
   proxys: Proxys;
+  /** Fuer die oeffentliche Basis, auf die absolute Dateipfade zeigen. */
+  einstellungen: Einstellungen;
   holen?: typeof fetch;
   uhr?: Uhr;
 }
@@ -65,8 +70,18 @@ export interface WeiterleitungOptionen {
  * der Anfrage. Express-Parameterrouten wuerden base64url-IDs und ein %2F im
  * idShortPath dekodieren und beim Zusammensetzen anders wieder kodieren. Das
  * waere genau die Veraenderung, die dieses Projekt ausschliesst.
+ *
+ * Die eine Ausnahme ist je Proxy schaltbar und ab Werk aus: absolute
+ * Dateipfade. Dann wird eine JSON-Antwort mit Status 200 eingelesen und ihre
+ * relativen Dateipfade zeigen auf den Proxy. Alles andere geht weiter als
+ * Strom durch.
  */
-export function weiterleitung({ proxys, holen = fetch, uhr = echteUhr }: WeiterleitungOptionen): RequestHandler {
+export function weiterleitung({
+  proxys,
+  einstellungen,
+  holen = fetch,
+  uhr = echteUhr,
+}: WeiterleitungOptionen): RequestHandler {
   return async function weiterleiten(req: Request, res: Response, next: NextFunction): Promise<void> {
     const zustaendig = zustaendigFuer(req.originalUrl, proxys);
     if (zustaendig === null) return next();
@@ -94,6 +109,28 @@ export function weiterleitung({ proxys, holen = fetch, uhr = echteUhr }: Weiterl
 
       res.status(oben.status);
       antwortKopfzeilenSetzen(res, oben);
+
+      const umschreiben =
+        proxy.dateiPfadeAbsolut &&
+        req.method === "GET" &&
+        oben.status === 200 &&
+        /\bjson\b/i.test(oben.headers.get("content-type") ?? "") &&
+        umschreibbar(rest);
+      if (umschreiben) {
+        const text = await oben.text();
+        let koerper: unknown;
+        try {
+          koerper = JSON.parse(text);
+        } catch {
+          // Kein JSON, obwohl es so heisst: dann so, wie es kam.
+          res.end(text);
+          return;
+        }
+        // Der ETag von oben gehoert zum Koerper von oben, nicht zu diesem.
+        res.removeHeader("etag");
+        res.end(JSON.stringify(antwortUmschreiben(rest, koerper, proxyBasisAus(req, einstellungen, proxy))));
+        return;
+      }
 
       if (!oben.body || req.method === "HEAD") {
         res.end();

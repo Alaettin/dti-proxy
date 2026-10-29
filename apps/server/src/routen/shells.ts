@@ -1,12 +1,15 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { zustaendigFuer } from "../aufloesung.js";
+import { schaleUmschreiben } from "../dateipfade.js";
+import type { Einstellungen } from "../einstellungen.js";
 import { ergebnis, type Uhr, echteUhr } from "../fehler.js";
 import { grenzeAus, seiteAus, versatzAus } from "../paging.js";
 import { SHELLS_PFAD } from "../pfade.js";
 import type { Proxys } from "../proxys.js";
 import type { SchalenPuffer } from "../puffer.js";
-import { gefundeneSchalen, misserfolgBeantworten, schalenHolen } from "../schalen.js";
+import { base64urlAus, gefundeneSchalen, misserfolgBeantworten, schalenHolen } from "../schalen.js";
 import { GLOBAL_ASSET_ID, itemIdAus } from "./discovery.js";
+import { proxyBasisAus } from "./swagger.js";
 
 /** Fassung und Profil der Repository-Spezifikation, nach der GET /shells gebaut ist. */
 export const REPOSITORY_FASSUNG = "3.1";
@@ -47,6 +50,7 @@ export function gesuchteItemIds(roh: unknown): Set<string> | null | "fehler" {
 export interface ShellsOptionen {
   proxys: Proxys;
   puffer: SchalenPuffer;
+  einstellungen: Einstellungen;
   holen?: typeof fetch;
   uhr?: Uhr;
 }
@@ -56,7 +60,7 @@ export interface ShellsOptionen {
  * nicht, deshalb bedient ihn der Proxy selbst: die Liste kommt aus den
  * gepflegten Item-IDs, jede Schale einzeln von oben ueber GET /shells/{id}.
  */
-export function shells({ proxys, puffer, holen = fetch, uhr = echteUhr }: ShellsOptionen): RequestHandler {
+export function shells({ proxys, puffer, einstellungen, holen = fetch, uhr = echteUhr }: ShellsOptionen): RequestHandler {
   return async function shellsBedienen(req: Request, res: Response, next: NextFunction): Promise<void> {
     const zustaendig = zustaendigFuer(req.originalUrl, proxys);
     if (zustaendig === null) return next();
@@ -97,8 +101,14 @@ export function shells({ proxys, puffer, holen = fetch, uhr = echteUhr }: Shells
 
     const ergebnisse = await schalenHolen({ proxy, proxyId: proxys.idVon(proxy.kennung), puffer, holen }, req, seite);
     if (misserfolgBeantworten(ergebnisse, res, uhr)) return;
-    res
-      .status(200)
-      .json({ paging_metadata: cursor === undefined ? {} : { cursor }, result: gefundeneSchalen(ergebnisse) });
+    let schalen = gefundeneSchalen(ergebnisse);
+    if (proxy.dateiPfadeAbsolut) {
+      const proxyBasis = proxyBasisAus(req, einstellungen, proxy);
+      schalen = schalen.map((schale) => {
+        const id = (schale as { id?: unknown }).id;
+        return typeof id === "string" ? schaleUmschreiben(schale, proxyBasis, base64urlAus(id)) : schale;
+      });
+    }
+    res.status(200).json({ paging_metadata: cursor === undefined ? {} : { cursor }, result: schalen });
   };
 }

@@ -11,6 +11,7 @@ export interface ProxyAnsicht {
   shellsAktiv: boolean;
   registryAktiv: boolean;
   submodelRegistryAktiv: boolean;
+  dateiPfadeAbsolut: boolean;
   /** Zeitpunkte als ISO-Text, null solange es keinen gibt. */
   erneuertAm: string | null;
   naechsteErneuerung: string | null;
@@ -211,6 +212,19 @@ export function ProxyFormular({
       <p className="hinweis">
         Ausgeschaltet antworten die Wege mit 404 und fehlen auf der Swagger-Seite. Die Item-IDs bleiben gespeichert.
       </p>
+      <label className="schalter">
+        <input
+          type="checkbox"
+          checked={werte.dateiPfadeAbsolut === "true"}
+          onChange={(e) => setzen({ ...werte, dateiPfadeAbsolut: e.target.checked ? "true" : "false" })}
+        />
+        <span>Dateipfade absolut ausgeben</span>
+      </label>
+      <p className="hinweis">
+        Das Zielsystem meldet bei File-Elementen nur relative Pfade wie /aasx/suppl/logo.png. Eingeschaltet zeigen
+        sie auf den Abruf der Datei über diesen Proxy (…/attachment), das Vorschaubild der Schale auf
+        …/asset-information/thumbnail. Ausgeschaltet geht jede Antwort unverändert durch.
+      </p>
     </>
   );
 }
@@ -225,6 +239,7 @@ const LEERER_PROXY: Record<string, string> = {
   shellsAktiv: "false",
   registryAktiv: "false",
   submodelRegistryAktiv: "false",
+  dateiPfadeAbsolut: "false",
 };
 
 export function Uebersicht({
@@ -335,7 +350,8 @@ export function Uebersicht({
           </h2>
           <p className="hinweis">
             Zielsystem {proxy.upstreamBasis} · GET /shells {proxy.shellsAktiv ? "an" : "aus"} · Registry{" "}
-            {proxy.registryAktiv ? "an" : "aus"} · Submodel Registry {proxy.submodelRegistryAktiv ? "an" : "aus"}
+            {proxy.registryAktiv ? "an" : "aus"} · Submodel Registry {proxy.submodelRegistryAktiv ? "an" : "aus"} ·
+            Dateipfade {proxy.dateiPfadeAbsolut ? "absolut" : "relativ"}
           </p>
           <div className="basis">
             <code>{proxy.basisUrl}</code>
@@ -420,6 +436,7 @@ export function Einstellungen({
       shellsAktiv: String(proxy.shellsAktiv),
       registryAktiv: String(proxy.registryAktiv),
       submodelRegistryAktiv: String(proxy.submodelRegistryAktiv),
+      dateiPfadeAbsolut: String(proxy.dateiPfadeAbsolut),
     }),
     [proxy],
   );
