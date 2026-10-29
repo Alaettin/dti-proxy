@@ -67,16 +67,19 @@ describe("Anmeldung", () => {
     expect(antwort.status).toBe(401);
   });
 
-  it("sperrt nach fuenf Fehlversuchen", async () => {
+  // Die Sperre nach Fehlversuchen ist ausgebaut: auch nach vielen falschen
+  // Versuchen kommt man mit den richtigen Daten sofort hinein.
+  it("sperrt nach Fehlversuchen nicht", async () => {
     stand = pruefstand();
-    for (let versuch = 0; versuch < 5; versuch += 1) {
-      await json("/admin/api/anmelden", { methode: "POST", koerper: { benutzer: "x", passwort: "y" } });
+    for (let versuch = 0; versuch < 10; versuch += 1) {
+      const falsch = await json("/admin/api/anmelden", { methode: "POST", koerper: { benutzer: "x", passwort: "y" } });
+      expect(falsch.status).toBe(401);
     }
     const antwort = await json("/admin/api/anmelden", {
       methode: "POST",
       koerper: { benutzer: TEST_BENUTZER, passwort: TEST_PASSWORT },
     });
-    expect(antwort.status).toBe(429);
+    expect(antwort.status).toBe(200);
   });
 
   it("nimmt ein gefaelschtes Cookie nicht an", async () => {

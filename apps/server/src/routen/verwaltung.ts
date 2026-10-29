@@ -9,9 +9,6 @@ import type { SchalenPuffer } from "../puffer.js";
 import { gleich, sitzungLoeschen, sitzungPruefen, sitzungSetzen } from "../sitzung.js";
 import { dienstBasisAus } from "./swagger.js";
 
-const VERSUCHE_MAX = 5;
-const SPERRE_MS = 15 * 60 * 1000;
-
 /** Express 5 tippt einen Wegparameter als string oder string[]. */
 function wegKennung(req: Request): string {
   const roh = req.params.kennung;
@@ -48,7 +45,6 @@ export function verwaltungRouter({
   sicher,
 }: VerwaltungOptionen): Router {
   const router = Router();
-  const versuche = new Map<string, { zahl: number; sperreBis: number }>();
 
   function schutz(req: Request, res: Response, next: NextFunction): void {
     if (sitzungPruefen(req, geheimnis) === null) {
@@ -78,15 +74,9 @@ export function verwaltungRouter({
     };
   }
 
+  // Bewusst ohne Sperre nach Fehlversuchen: sie hat den eigenen Zugang
+  // ausgesperrt, und das Passwort steht ohnehin im oeffentlichen Repo.
   router.post("/anmelden", (req, res) => {
-    const herkunft = req.ip ?? "unbekannt";
-    const stand = versuche.get(herkunft);
-    if (stand && stand.sperreBis > Date.now()) {
-      const sekunden = Math.ceil((stand.sperreBis - Date.now()) / 1000);
-      res.status(429).json({ fehler: `Zu viele Versuche. Neuer Versuch in ${sekunden} Sekunden.` });
-      return;
-    }
-
     const eingabe = req.body as { benutzer?: unknown; passwort?: unknown } | undefined;
     const passt =
       typeof eingabe?.benutzer === "string" &&
@@ -95,13 +85,10 @@ export function verwaltungRouter({
       gleich(eingabe.passwort, passwort);
 
     if (!passt) {
-      const zahl = (stand?.zahl ?? 0) + 1;
-      versuche.set(herkunft, { zahl, sperreBis: zahl >= VERSUCHE_MAX ? Date.now() + SPERRE_MS : 0 });
       res.status(401).json({ fehler: "Benutzername oder Passwort stimmt nicht." });
       return;
     }
 
-    versuche.delete(herkunft);
     sitzungSetzen(res, benutzer, geheimnis, sicher ?? req.secure);
     res.json({ angemeldet: true, benutzer });
   });
